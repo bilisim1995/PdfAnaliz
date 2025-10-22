@@ -1,0 +1,138 @@
+import requests
+import tempfile
+import os
+from pathlib import Path
+from urllib.parse import urlparse
+import uuid
+
+def download_pdf_from_url(url: str) -> str:
+    """URL'den PDF indirir ve geçici klasöre kaydeder"""
+    try:
+        # URL'yi doğrula
+        parsed_url = urlparse(url)
+        if not parsed_url.scheme or not parsed_url.netloc:
+            raise ValueError("Geçersiz URL formatı")
+        
+        # HTTP headers
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        # PDF'i indir
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        # Content-Type kontrolü
+        content_type = response.headers.get('content-type', '').lower()
+        if 'pdf' not in content_type and not url.lower().endswith('.pdf'):
+            # İçeriği kontrol et (PDF magic number)
+            if not response.content.startswith(b'%PDF-'):
+                raise ValueError("İndirilen dosya PDF formatında değil")
+        
+        # Geçici dosya oluştur
+        temp_dir = tempfile.gettempdir()
+        filename = f"downloaded_pdf_{uuid.uuid4().hex[:8]}.pdf"
+        temp_path = os.path.join(temp_dir, filename)
+        
+        # Dosyayı kaydet
+        with open(temp_path, 'wb') as f:
+            f.write(response.content)
+        
+        # Dosya boyutunu kontrol et
+        file_size = os.path.getsize(temp_path)
+        if file_size < 1024:  # 1KB'dan küçükse
+            os.remove(temp_path)
+            raise ValueError("İndirilen dosya çok küçük (PDF olmayabilir)")
+        
+        return temp_path
+        
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"URL'den indirme hatası: {str(e)}")
+    except Exception as e:
+        raise Exception(f"PDF indirme hatası: {str(e)}")
+
+def create_output_directories() -> str:
+    """Çıktı klasörlerini oluşturur"""
+    try:
+        # Ana çıktı klasörü
+        base_dir = Path.cwd() / "pdf_output"
+        
+        # Benzersiz alt klasör (timestamp ile)
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = base_dir / f"sections_{timestamp}"
+        
+        # Klasörleri oluştur
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        return str(output_dir)
+        
+    except Exception as e:
+        raise Exception(f"Çıktı klasörü oluşturma hatası: {str(e)}")
+
+def validate_pdf_file(file_path: str) -> bool:
+    """PDF dosyasının geçerliliğini kontrol eder"""
+    try:
+        if not os.path.exists(file_path):
+            return False
+        
+        # Dosya uzantısı kontrolü
+        if not file_path.lower().endswith('.pdf'):
+            return False
+        
+        # Dosya boyutu kontrolü
+        file_size = os.path.getsize(file_path)
+        if file_size < 1024:  # 1KB'dan küçük
+            return False
+        
+        # PDF magic number kontrolü
+        with open(file_path, 'rb') as f:
+            header = f.read(8)
+            if not header.startswith(b'%PDF-'):
+                return False
+        
+        return True
+        
+    except Exception:
+        return False
+
+def cleanup_temp_files(file_paths: list):
+    """Geçici dosyaları temizler"""
+    for file_path in file_paths:
+        try:
+            if os.path.exists(file_path) and 'temp' in file_path:
+                os.remove(file_path)
+        except Exception:
+            pass  # Sessizce devam et
+
+def format_file_size(size_bytes: int) -> str:
+    """Dosya boyutunu okunabilir formatta döndürür"""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+
+def extract_filename_from_url(url: str) -> str:
+    """URL'den dosya adını çıkarır"""
+    try:
+        parsed_url = urlparse(url)
+        filename = os.path.basename(parsed_url.path)
+        if not filename or not filename.endswith('.pdf'):
+            filename = f"document_{uuid.uuid4().hex[:8]}.pdf"
+        return filename
+    except Exception:
+        return f"document_{uuid.uuid4().hex[:8]}.pdf"
+
+def sanitize_filename(filename: str) -> str:
+    """Dosya adını güvenli hale getirir"""
+    import re
+    # Türkçe karakterleri koru, sadece güvenli olmayan karakterleri temizle
+    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    filename = filename.strip('. ')
+    if not filename:
+        filename = f"file_{uuid.uuid4().hex[:8]}"
+    return filename
