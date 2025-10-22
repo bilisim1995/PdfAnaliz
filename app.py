@@ -3,6 +3,7 @@ import os
 import tempfile
 from pathlib import Path
 import json
+import shutil
 from pdf_processor import PDFProcessor
 from deepseek_analyzer import DeepSeekAnalyzer
 from utils import download_pdf_from_url, create_output_directories
@@ -139,9 +140,12 @@ def main():
             st.info(f"📁 Bölümlenmiş PDF dosyaları şurada kaydedildi: `{st.session_state.output_dir}`")
         
         # Reset button
-        if st.button("🔄 Yeni İşlem"):
-            reset_session_state()
-            st.rerun()
+        st.divider()
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            if st.button("🗑️ Verileri Sıfırla", type="secondary", help="Tüm işlemi sıfırlar, dosyaları siler ve uygulamayı yeniden başlatır"):
+                reset_and_cleanup()
+                st.rerun()
 
 def process_pdf(pdf_path, api_key, sectioning_mode, min_pages, max_pages):
     """Process PDF file and create sections"""
@@ -300,8 +304,17 @@ def process_pdf(pdf_path, api_key, sectioning_mode, min_pages, max_pages):
         st.error(f"❌ İşlem sırasında hata oluştu: {str(e)}")
         st.exception(e)
 
-def reset_session_state():
-    """Reset all session state variables"""
+def reset_and_cleanup():
+    """Reset all session state and clean up files"""
+    try:
+        # Dosyaları ve klasörü sil
+        if st.session_state.output_dir and os.path.exists(st.session_state.output_dir):
+            shutil.rmtree(st.session_state.output_dir)
+            print(f"Klasör silindi: {st.session_state.output_dir}")
+    except Exception as e:
+        print(f"Klasör silme hatası: {str(e)}")
+    
+    # Session state'i temizle
     st.session_state.processing_complete = False
     st.session_state.json_output = ""
     st.session_state.output_dir = ""
