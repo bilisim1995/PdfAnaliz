@@ -1,0 +1,172 @@
+{
+  "pdf_sections": [
+    {
+      "output_filename": "01_Bolum_1-5.pdf",
+      "start_page": 1,
+      "end_page": 5,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 8003 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "02_Bolum_6-10.pdf",
+      "start_page": 6,
+      "end_page": 10,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 4897 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "03_Bolum_11-15.pdf",
+      "start_page": 11,
+      "end_page": 15,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 3966 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "04_Bolum_16-20.pdf",
+      "start_page": 16,
+      "end_page": 20,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 3779 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "05_Bolum_21-25.pdf",
+      "start_page": 21,
+      "end_page": 25,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 6546 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "06_Bolum_26-30.pdf",
+      "start_page": 26,
+      "end_page": 30,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 5793 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "07_Bolum_31-35.pdf",
+      "start_page": 31,
+      "end_page": 35,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 6166 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "08_Bolum_36-40.pdf",
+      "start_page": 36,
+      "end_page": 40,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 4298 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "09_Bolum_41-45.pdf",
+      "start_page": 41,
+      "end_page": 45,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 8003 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "10_Bolum_46-50.pdf",
+      "start_page": 46,
+      "end_page": 50,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 8003 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "11_Bolum_51-55.pdf",
+      "start_page": 51,
+      "end_page": 55,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 7927 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "12_Bolum_56-60.pdf",
+      "start_page": 56,
+      "end_page": 60,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 7695 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "13_Bolum_61-65.pdf",
+      "start_page": 61,
+      "end_page": 65,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 6638 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "14_Bolum_66-70.pdf",
+      "start_page": 66,
+      "end_page": 70,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 4084 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "15_Bolum_71-75.pdf",
+      "start_page": 71,
+      "end_page": 75,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 5163 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "16_Bolum_76-80.pdf",
+      "start_page": 76,
+      "end_page": 80,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 4899 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "17_Bolum_81-85.pdf",
+      "start_page": 81,
+      "end_page": 85,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 5344 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "18_Bolum_86-90.pdf",
+      "start_page": 86,
+      "end_page": 90,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 4100 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "19_Bolum_91-94.pdf",
+      "start_page": 91,
+      "end_page": 94,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 5911 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "20_Bolum_95-98.pdf",
+      "start_page": 95,
+      "end_page": 98,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 3381 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    },
+    {
+      "output_filename": "21_Bolum_99-102.pdf",
+      "start_page": 99,
+      "end_page": 102,
+      "title": "API Analiz Hatası",
+      "description": "Bu bölümün AI analizi yapılamadı. Hata: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}. İçerik yaklaşık 3451 karakter barındırmaktadır.",
+      "keywords": "api_hatası,analiz_yapılamadı"
+    }
+  ]
+}

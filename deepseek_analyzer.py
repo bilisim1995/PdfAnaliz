@@ -73,7 +73,10 @@ KURALLAR:
             )
             
             # API yanıtını al
-            result_text = response.choices[0].message.content.strip()
+            result_text = response.choices[0].message.content
+            if not result_text:
+                raise ValueError("API'den boş yanıt alındı")
+            result_text = result_text.strip()
             
             # JSON'ı ayıkla
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
