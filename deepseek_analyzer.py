@@ -87,9 +87,14 @@ KURALLAR:
                 raise ValueError("API yanıtında JSON bulunamadı")
                 
         except Exception as e:
-            print(f"DeepSeek analiz hatası: {str(e)}")
+            error_msg = f"DeepSeek analiz hatası: {str(e)}"
+            print(error_msg)
             # Hata durumunda fallback metadata
-            return self._create_fallback_metadata(text_content)
+            return {
+                'title': 'API Analiz Hatası',
+                'description': f"Bu bölümün AI analizi yapılamadı. Hata: {str(e)}. İçerik yaklaşık {len(text_content)} karakter barındırmaktadır.",
+                'keywords': 'api_hatası,analiz_yapılamadı'
+            }
     
     def _clean_analysis_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """API sonucunu temizler ve doğrular"""

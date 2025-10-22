@@ -83,7 +83,7 @@ def main():
             max_pages_per_section = st.number_input(
                 "Maximum sayfa/bölüm:",
                 min_value=2,
-                max_value=20,
+                max_value=30,
                 value=5,
                 help="Her bölümde maximum sayfa sayısı"
             )
