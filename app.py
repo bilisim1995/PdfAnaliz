@@ -194,6 +194,10 @@ def process_pdf(pdf_path, api_key, min_pages, max_pages):
             if section_text.strip():  # Only analyze if there's actual text
                 analysis = analyzer.analyze_section_content(section_text)
                 
+                # API hata kontrolü
+                if 'API Analiz Hatası' in analysis.get('title', ''):
+                    st.warning(f"⚠️ Bölüm {i + 1} için AI analizi başarısız oldu. Hata: {analysis.get('description', '')}")
+                
                 metadata = {
                     "output_filename": Path(section_path).name,
                     "start_page": section['start_page'],
