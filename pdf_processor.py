@@ -130,6 +130,51 @@ class PDFProcessor:
         except Exception as e:
             raise Exception(f"Metin çıkarma hatası: {str(e)}")
     
+    def extract_all_page_texts(self, pdf_path: str) -> List[str]:
+        """Tüm sayfaların metinlerini çıkarır"""
+        try:
+            page_texts = []
+            with open(pdf_path, 'rb') as file:
+                reader = pypdf.PdfReader(file)
+                
+                for page_num in range(len(reader.pages)):
+                    try:
+                        page_text = reader.pages[page_num].extract_text()
+                        page_texts.append(page_text if page_text else "")
+                    except Exception as e:
+                        # Sayfa metin çıkarma hatası - boş string ekle
+                        page_texts.append("")
+                        continue
+            
+            return page_texts
+        except Exception as e:
+            raise Exception(f"Sayfa metinleri çıkarma hatası: {str(e)}")
+    
+    def create_intelligent_sections(self, pdf_path: str, total_pages: int, analyzer) -> List[Dict[str, int]]:
+        """AI kullanarak içerik bazlı optimal bölümler oluşturur"""
+        try:
+            # Tüm sayfaların metinlerini çıkar
+            page_texts = self.extract_all_page_texts(pdf_path)
+            
+            # AI'dan bölüm önerileri al
+            suggested_sections = analyzer.suggest_content_based_sections(page_texts, total_pages)
+            
+            # Bölümleri formatla
+            sections = []
+            for section in suggested_sections:
+                sections.append({
+                    'start_page': section['start_page'],
+                    'end_page': section['end_page'],
+                    'reason': section.get('reason', '')
+                })
+            
+            return sections
+            
+        except Exception as e:
+            print(f"Akıllı bölümleme hatası: {str(e)}")
+            # Fallback: Basit eşit bölümleme
+            return self.create_optimal_sections(pdf_path, total_pages, 3, 10)
+    
     def get_pdf_metadata(self, pdf_path: str) -> Dict[str, Any]:
         """PDF metadata bilgilerini alır"""
         try:
