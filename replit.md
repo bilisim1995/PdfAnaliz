@@ -2,7 +2,15 @@
 
 ## Overview
 
-This is a Streamlit-based web application that processes PDF documents and segments them into optimized chunks for RAG (Retrieval Augmented Generation) systems. The application analyzes PDF content using DeepSeek AI to generate metadata including titles, descriptions, and keywords for each section. Users can upload PDFs from their computer or download them from URLs, and the system automatically creates intelligent document sections with AI-generated metadata to improve retrieval performance in RAG applications.
+This is a Streamlit-based web application that processes PDF documents and segments them into optimized chunks for RAG (Retrieval Augmented Generation) systems. The application offers two sectioning strategies: AI-powered intelligent sectioning that analyzes content to create semantically meaningful sections, and manual sectioning based on fixed page ranges. Using DeepSeek AI, it generates comprehensive metadata including titles, descriptions, and keywords for each section. Users can upload PDFs from their computer or download them from URLs, and the system automatically creates document sections with AI-generated metadata to improve retrieval performance in RAG applications.
+
+## Recent Changes (October 22, 2025)
+
+- Added **Intelligent Content-Based Sectioning**: AI analyzes PDF content to create semantically coherent sections based on topic changes and content flow
+- Implemented **Dual Sectioning Strategies**: Users can choose between AI-powered intelligent sectioning or manual fixed-page sectioning
+- Enhanced **Section Reasoning**: AI provides explanations for why each section was created
+- Improved **Error Handling**: Better error messages when DeepSeek API encounters issues
+- Increased **Maximum Page Limit**: Raised from 20 to 30 pages per section for manual mode
 
 ## User Preferences
 
@@ -29,16 +37,23 @@ Preferred communication style: Simple, everyday language.
 
 1. **PDFProcessor** (`pdf_processor.py`)
    - Handles PDF structure analysis and page counting
-   - Creates optimal document sections based on configurable min/max page parameters
+   - **Dual Sectioning Modes**:
+     - `create_optimal_sections()`: Creates sections based on min/max page parameters (manual mode)
+     - `create_intelligent_sections()`: Uses AI to analyze content and create semantically meaningful sections
+   - `extract_all_page_texts()`: Extracts text from all pages for content analysis
    - Uses pypdf library for PDF manipulation
    - Extracts sample text from initial pages for structure analysis
 
 2. **DeepSeekAnalyzer** (`deepseek_analyzer.py`)
    - Integrates with DeepSeek AI API via OpenAI client interface
-   - Generates metadata (title, description, keywords) for PDF sections
-   - Implements content length limiting (8000 characters) for token management
+   - **Content Analysis Functions**:
+     - `analyze_section_content()`: Generates metadata (title, description, keywords) for individual sections
+     - `suggest_content_based_sections()`: Analyzes entire PDF to suggest optimal section boundaries
+   - Implements intelligent section validation and fallback strategies
+   - Content length limiting (8000 characters for metadata, sampling for sectioning) for token management
    - Handles edge cases like insufficient text content
    - Uses Turkish language for metadata generation
+   - Provides reasoning for each suggested section boundary
 
 3. **Utils** (`utils.py`)
    - PDF download functionality from URLs with validation

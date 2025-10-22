@@ -100,6 +100,10 @@ def main():
                 )
         else:
             st.info("🤖 AI, PDF içeriğini analiz ederek en uygun bölümleme stratejisini belirleyecek. Bu işlem biraz daha uzun sürebilir.")
+            
+            # API key kontrolü
+            if not api_key or api_key == "":
+                st.warning("⚠️ Akıllı bölümleme için DeepSeek API anahtarı gereklidir. Lütfen önce API anahtarınızı girin.")
         
         # Process PDF button
         if st.button("🚀 PDF'i İşle ve Analiz Et", type="primary"):
@@ -172,19 +176,31 @@ def process_pdf(pdf_path, api_key, sectioning_mode, min_pages, max_pages):
             status_text.text("🤖 AI ile içerik bazlı bölümler oluşturuluyor...")
             progress_bar.progress(40)
             
-            sections = processor.create_intelligent_sections(
-                pdf_path, 
-                pdf_info['total_pages'], 
-                analyzer
-            )
-            
-            # Bölüm nedenlerini göster
-            st.success(f"🤖 AI {len(sections)} anlamlı bölüm oluşturdu")
-            with st.expander("📋 Bölümleme Detayları"):
-                for i, section in enumerate(sections):
-                    st.write(f"**Bölüm {i+1}:** Sayfa {section['start_page']}-{section['end_page']}")
-                    if section.get('reason'):
-                        st.write(f"   └─ *{section['reason']}*")
+            try:
+                sections = processor.create_intelligent_sections(
+                    pdf_path, 
+                    pdf_info['total_pages'], 
+                    analyzer
+                )
+                
+                # Bölüm nedenlerini göster
+                st.success(f"🤖 AI {len(sections)} anlamlı bölüm oluşturdu")
+                with st.expander("📋 Bölümleme Detayları"):
+                    for i, section in enumerate(sections):
+                        st.write(f"**Bölüm {i+1}:** Sayfa {section['start_page']}-{section['end_page']}")
+                        if section.get('reason'):
+                            st.write(f"   └─ *{section['reason']}*")
+            except Exception as e:
+                st.warning(f"⚠️ AI bölümleme başarısız oldu: {str(e)}")
+                st.info("📏 Otomatik olarak manuel bölümleme moduna geçiliyor...")
+                
+                # Fallback: Manuel bölümleme
+                sections = processor.create_optimal_sections(
+                    pdf_path, 
+                    pdf_info['total_pages'], 
+                    3,  # Default min pages
+                    10  # Default max pages
+                )
         else:
             status_text.text("✂️ Manuel bölümler oluşturuluyor...")
             
