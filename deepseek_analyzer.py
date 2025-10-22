@@ -160,6 +160,134 @@ KURALLAR:
             'keywords': keywords
         }
     
+    def suggest_content_based_sections(self, page_texts: list, total_pages: int) -> list:
+        """İçerik bazlı optimal bölümleme önerileri oluşturur"""
+        try:
+            # Her 3 sayfada bir örnek al (çok uzun olmaması için)
+            sample_pages = []
+            for i in range(0, total_pages, max(1, total_pages // 10)):  # Maksimum 10 örnek
+                if i < len(page_texts):
+                    sample_pages.append({
+                        'page': i + 1,
+                        'text': page_texts[i][:500]  # Her sayfadan ilk 500 karakter
+                    })
+            
+            # Örnekleri birleştir
+            samples_text = "\n\n".join([f"SAYFA {s['page']}: {s['text']}" for s in sample_pages])
+            
+            prompt = f"""
+Bu bir {total_pages} sayfalık PDF dokümanının içerik örnekleridir. RAG (Retrieval Augmented Generation) sistemi için bu PDF'i optimal bölümlere ayırmalıyım.
+
+İÇERİK ÖRNEKLERİ:
+{samples_text}
+
+GÖREV:
+Bu PDF'i anlam bütünlüğü olan, RAG için optimal bölümlere ayır. Her bölüm:
+- Tek bir ana konuyu veya ilişkili konuları kapsamalı
+- Çok küçük (1-2 sayfa) veya çok büyük (30+ sayfa) olmamalı
+- Mantıklı bir başlangıç ve bitiş noktası olmalı
+
+ÇIKTI FORMATI (sadece JSON array döndür):
+[
+  {{"start_page": 1, "end_page": 5, "reason": "Giriş ve genel kavramlar"}},
+  {{"start_page": 6, "end_page": 12, "reason": "Ana konu 1"}},
+  {{"start_page": 13, "end_page": {total_pages}, "reason": "Ana konu 2 ve sonuç"}}
+]
+
+ÖNEMLİ:
+- Tüm sayfalar kapsanmalı (1'den {total_pages}'a kadar)
+- Bölümler örtüşmemeli
+- Sayfa numaraları ardışık olmalı
+- Maksimum 15 bölüm oluştur
+"""
+
+            response = self.client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Sen bir doküman analiz uzmanısın. PDF içeriklerini analiz ederek RAG sistemleri için optimal bölümleme önerileri sunuyorsun."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.3,
+                max_tokens=2000
+            )
+            
+            result_text = response.choices[0].message.content
+            if not result_text:
+                raise ValueError("API'den boş yanıt alındı")
+            
+            # JSON array'i ayıkla
+            json_match = re.search(r'\[.*\]', result_text.strip(), re.DOTALL)
+            if json_match:
+                sections = json.loads(json_match.group())
+                
+                # Bölümleri doğrula ve düzelt
+                validated_sections = self._validate_sections(sections, total_pages)
+                return validated_sections
+            else:
+                raise ValueError("API yanıtında JSON array bulunamadı")
+                
+        except Exception as e:
+            print(f"İçerik bazlı bölümleme hatası: {str(e)}")
+            # Fallback: Basit eşit bölümleme
+            return self._create_fallback_sections(total_pages)
+    
+    def _validate_sections(self, sections: list, total_pages: int) -> list:
+        """Bölümlerin geçerliliğini kontrol eder ve düzeltir"""
+        if not sections:
+            return self._create_fallback_sections(total_pages)
+        
+        validated = []
+        expected_start = 1
+        
+        for section in sections:
+            start = section.get('start_page', expected_start)
+            end = section.get('end_page', start)
+            
+            # Sınırları düzelt
+            start = max(expected_start, min(start, total_pages))
+            end = max(start, min(end, total_pages))
+            
+            if start <= total_pages:
+                validated.append({
+                    'start_page': start,
+                    'end_page': end,
+                    'reason': section.get('reason', '')
+                })
+                expected_start = end + 1
+        
+        # Eğer tüm sayfalar kapsanmadıysa, son bölümü genişlet
+        if validated and validated[-1]['end_page'] < total_pages:
+            validated[-1]['end_page'] = total_pages
+        
+        # Hiç bölüm yoksa fallback kullan
+        if not validated:
+            return self._create_fallback_sections(total_pages)
+        
+        return validated
+    
+    def _create_fallback_sections(self, total_pages: int) -> list:
+        """Basit eşit bölümleme oluşturur"""
+        sections = []
+        pages_per_section = max(5, total_pages // 5)  # Yaklaşık 5 bölüm
+        
+        current_page = 1
+        while current_page <= total_pages:
+            end_page = min(current_page + pages_per_section - 1, total_pages)
+            sections.append({
+                'start_page': current_page,
+                'end_page': end_page,
+                'reason': f'Bölüm {len(sections) + 1}'
+            })
+            current_page = end_page + 1
+        
+        return sections
+    
     def test_connection(self) -> bool:
         """API bağlantısını test eder"""
         try:
