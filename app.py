@@ -69,31 +69,44 @@ def main():
     if pdf_path:
         st.header("2️⃣ PDF İşleme Ayarları")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            min_pages_per_section = st.number_input(
-                "Minimum sayfa/bölüm:",
-                min_value=1,
-                max_value=10,
-                value=1,
-                help="Her bölümde minimum sayfa sayısı"
-            )
+        # Bölümleme stratejisi seçimi
+        sectioning_mode = st.radio(
+            "Bölümleme Stratejisi:",
+            ["🤖 Akıllı Bölümleme (AI bazlı, içeriğe göre)", "📏 Manuel Bölümleme (sabit sayfa aralığı)"],
+            help="Akıllı bölümleme: AI, PDF içeriğini analiz ederek en mantıklı bölümleri oluşturur. Manuel bölümleme: Sayfa sayısına göre eşit bölümler oluşturur."
+        )
         
-        with col2:
-            max_pages_per_section = st.number_input(
-                "Maximum sayfa/bölüm:",
-                min_value=2,
-                max_value=30,
-                value=5,
-                help="Her bölümde maximum sayfa sayısı"
-            )
+        min_pages_per_section = 1
+        max_pages_per_section = 30
+        
+        if sectioning_mode == "📏 Manuel Bölümleme (sabit sayfa aralığı)":
+            col1, col2 = st.columns(2)
+            with col1:
+                min_pages_per_section = st.number_input(
+                    "Minimum sayfa/bölüm:",
+                    min_value=1,
+                    max_value=10,
+                    value=3,
+                    help="Her bölümde minimum sayfa sayısı"
+                )
+            
+            with col2:
+                max_pages_per_section = st.number_input(
+                    "Maximum sayfa/bölüm:",
+                    min_value=2,
+                    max_value=30,
+                    value=10,
+                    help="Her bölümde maximum sayfa sayısı"
+                )
+        else:
+            st.info("🤖 AI, PDF içeriğini analiz ederek en uygun bölümleme stratejisini belirleyecek. Bu işlem biraz daha uzun sürebilir.")
         
         # Process PDF button
         if st.button("🚀 PDF'i İşle ve Analiz Et", type="primary"):
-            if min_pages_per_section >= max_pages_per_section:
+            if sectioning_mode == "📏 Manuel Bölümleme (sabit sayfa aralığı)" and min_pages_per_section >= max_pages_per_section:
                 st.error("❌ Minimum sayfa sayısı, maximum sayfa sayısından küçük olmalıdır!")
             else:
-                process_pdf(pdf_path, api_key, min_pages_per_section, max_pages_per_section)
+                process_pdf(pdf_path, api_key, sectioning_mode, min_pages_per_section, max_pages_per_section)
     
     # Results section
     if st.session_state.processing_complete:
@@ -126,7 +139,7 @@ def main():
             reset_session_state()
             st.rerun()
 
-def process_pdf(pdf_path, api_key, min_pages, max_pages):
+def process_pdf(pdf_path, api_key, sectioning_mode, min_pages, max_pages):
     """Process PDF file and create sections"""
     try:
         # Create progress bar
@@ -155,17 +168,37 @@ def process_pdf(pdf_path, api_key, min_pages, max_pages):
         st.info(f"📄 PDF Bilgisi: {pdf_info['total_pages']} sayfa tespit edildi")
         
         # Step 4: Create optimal sections
-        status_text.text("✂️ Optimal bölümler oluşturuluyor...")
+        if sectioning_mode == "🤖 Akıllı Bölümleme (AI bazlı, içeriğe göre)":
+            status_text.text("🤖 AI ile içerik bazlı bölümler oluşturuluyor...")
+            progress_bar.progress(40)
+            
+            sections = processor.create_intelligent_sections(
+                pdf_path, 
+                pdf_info['total_pages'], 
+                analyzer
+            )
+            
+            # Bölüm nedenlerini göster
+            st.success(f"🤖 AI {len(sections)} anlamlı bölüm oluşturdu")
+            with st.expander("📋 Bölümleme Detayları"):
+                for i, section in enumerate(sections):
+                    st.write(f"**Bölüm {i+1}:** Sayfa {section['start_page']}-{section['end_page']}")
+                    if section.get('reason'):
+                        st.write(f"   └─ *{section['reason']}*")
+        else:
+            status_text.text("✂️ Manuel bölümler oluşturuluyor...")
+            
+            sections = processor.create_optimal_sections(
+                pdf_path, 
+                pdf_info['total_pages'], 
+                min_pages, 
+                max_pages
+            )
+        
         progress_bar.progress(50)
         
-        sections = processor.create_optimal_sections(
-            pdf_path, 
-            pdf_info['total_pages'], 
-            min_pages, 
-            max_pages
-        )
-        
-        st.info(f"📝 {len(sections)} bölüm oluşturuldu")
+        if sectioning_mode != "🤖 Akıllı Bölümleme (AI bazlı, içeriğe göre)":
+            st.info(f"📝 {len(sections)} bölüm oluşturuldu")
         
         # Step 5: Generate section files and analyze content
         status_text.text("🤖 AI ile içerik analiz ediliyor...")
