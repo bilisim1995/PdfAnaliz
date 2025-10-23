@@ -167,6 +167,13 @@ def main():
     # Update session state
     st.session_state.belge_adi_value = belge_adi
     
+    # Format button for belge_adi
+    if belge_adi:
+        if st.sidebar.button("✨ Formatla", key="format_belge_adi", use_container_width=True, help="Her kelimenin ilk harfini büyük yapar"):
+            formatted_text = belge_adi.title()
+            st.session_state.belge_adi_value = formatted_text
+            st.rerun()
+    
     # Show document name suggestion if available
     if st.session_state.suggested_doc_name:
         st.sidebar.caption(f"💡 Öneri: **{st.session_state.suggested_doc_name}**")
