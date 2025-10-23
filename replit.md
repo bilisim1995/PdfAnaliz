@@ -14,6 +14,11 @@ This is a Streamlit-based web application that processes PDF documents and segme
 - Improved **URL Download Reliability**: Added retry logic with exponential backoff for network resilience
 - **Security Enhancement**: Removed hardcoded API key, now requires environment variable or user input
 - **State Management**: Proper session state reset for multiple PDF processing without manual restart
+- **Keywords Format Update**: Keywords now preserve Turkish characters and spaces instead of underscores (e.g., "otopark yönetmeliği" not "otopark_yönetmeliği")
+- **API Upload Integration**: Added "Verileri Yükle" button to POST split PDFs and metadata to bulk upload endpoint
+  - Supports multipart/form-data with files, category, institution, belge_adi, and metadata fields
+  - Displays API response with batch_id and upload status
+  - Configurable via sidebar settings (API URL, token, category, institution, belge_adi)
 
 ## Previous Changes (October 22, 2025)
 

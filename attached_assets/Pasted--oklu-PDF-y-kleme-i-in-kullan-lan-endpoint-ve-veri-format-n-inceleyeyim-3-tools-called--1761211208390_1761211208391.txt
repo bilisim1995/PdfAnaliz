@@ -1,0 +1,216 @@
+Çoklu PDF yükleme için kullanılan endpoint ve veri formatını inceleyeyim:
+
+
+[3 tools called]
+
+## 📋 **Çoklu PDF Yükleme API Endpoint'i ve Veri Formatı**
+
+### 🔗 **Endpoint**
+```
+POST /api/admin/documents/bulk-upload
+```
+
+### 📤 **İstek Formatı (Request)**
+
+#### **Headers**
+```http
+Authorization: Bearer {access_token}
+Content-Type: multipart/form-data
+```
+
+#### **FormData Alanları**
+```javascript
+// Zorunlu alanlar
+files: File[]                    // PDF dosyaları (multiple)
+category: string                // Kategori (örn: "mevzuat", "kanun")
+institution: string            // Kurum (örn: "TBB", "Adalet Bakanlığı")
+belge_adi: string              // Belge adı (örn: "TCK_2024")
+
+// Opsiyonel alanlar
+metadata: string               // JSON string formatında metadata
+```
+
+#### **Metadata JSON Formatı**
+```json
+{
+  "pdf_sections": [
+    {
+      "output_filename": "dosya1.pdf",
+      "title": "Dosya Başlığı",
+      "description": "Dosya açıklaması",
+      "keywords": "anahtar, kelimeler"
+    },
+    {
+      "output_filename": "dosya2.pdf", 
+      "title": "İkinci Dosya",
+      "description": "İkinci dosya açıklaması",
+      "keywords": "diğer, anahtar, kelimeler"
+    }
+  ]
+}
+```
+
+### 📥 **Cevap Formatı (Response)**
+
+#### **Başarılı Cevap (200 OK)**
+```json
+{
+  "success": true,
+  "timestamp": "2024-10-19T10:30:00Z",
+  "data": {
+    "batch_id": "batch_abc123def456",
+    "total_files": 3,
+    "tasks": [
+      {
+        "task_id": "task_001",
+        "document_id": "doc_123",
+        "filename": "dosya1.pdf",
+        "status": "queued"
+      },
+      {
+        "task_id": "task_002", 
+        "document_id": "doc_124",
+        "filename": "dosya2.pdf",
+        "status": "queued"
+      },
+      {
+        "task_id": "task_003",
+        "document_id": "doc_125", 
+        "filename": "dosya3.pdf",
+        "status": "queued"
+      }
+    ]
+  },
+  "message": "Toplu yükleme başlatıldı"
+}
+```
+
+#### **Hata Cevabı (400/422)**
+```json
+{
+  "success": false,
+  "message": "Eksik alanlar: category, institution",
+  "detail": [
+    {
+      "loc": ["category"],
+      "msg": "field required",
+      "type": "value_error.missing"
+    }
+  ]
+}
+```
+
+### 🔄 **Progress Takibi Endpoint'leri**
+
+#### **Task Progress**
+```
+GET /api/admin/documents/bulk-upload/progress/{task_id}
+```
+
+**Cevap:**
+```json
+{
+  "status": "success",
+  "data": {
+    "task_id": "task_001",
+    "document_id": 123,
+    "filename": "dosya1.pdf",
+    "status": "processing",
+    "progress_percent": 65,
+    "stage": "embed",
+    "created_at": "2024-10-19T10:30:00Z",
+    "updated_at": "2024-10-19T10:32:00Z"
+  }
+}
+```
+
+#### **Batch Progress**
+```
+GET /api/admin/documents/bulk-upload/batch/{batch_id}/progress
+```
+
+**Cevap:**
+```json
+{
+  "status": "success", 
+  "data": {
+    "batch_id": "batch_abc123def456",
+    "total_files": 3,
+    "completed_count": 1,
+    "failed_count": 0,
+    "queued_count": 1,
+    "processing_count": 1,
+    "batch_status": "processing",
+    "created_at": "2024-10-19T10:30:00Z",
+    "tasks": [
+      {
+        "task_id": "task_001",
+        "document_id": 123,
+        "filename": "dosya1.pdf",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_002",
+        "document_id": 124, 
+        "filename": "dosya2.pdf",
+        "status": "processing"
+      },
+      {
+        "task_id": "task_003",
+        "document_id": 125,
+        "filename": "dosya3.pdf", 
+        "status": "queued"
+      }
+    ]
+  }
+}
+```
+
+### 📝 **Örnek Kullanım (JavaScript)**
+
+```javascript
+const formData = new FormData();
+
+// Dosyaları ekle
+files.forEach(file => {
+  formData.append('files', file);
+});
+
+// Zorunlu alanlar
+formData.append('category', 'mevzuat');
+formData.append('institution', 'TBB');
+formData.append('belge_adi', 'TCK_2024');
+
+// Metadata (opsiyonel)
+const metadata = {
+  pdf_sections: files.map(file => ({
+    output_filename: file.name,
+    title: file.name.replace('.pdf', ''),
+    description: `TCK_2024 - ${file.name}`,
+    keywords: 'mevzuat, TBB'
+  }))
+};
+formData.append('metadata', JSON.stringify(metadata));
+
+// API çağrısı
+const response = await fetch('/api/admin/documents/bulk-upload', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`
+  },
+  body: formData
+});
+
+const result = await response.json();
+console.log('Batch ID:', result.data.batch_id);
+```
+
+### ⚠️ **Hata Durumları**
+
+- **401**: Token geçersiz
+- **400**: Geçersiz dosya formatı veya metadata
+- **422**: Zorunlu alanlar eksik
+- **413**: Dosya boyutu çok büyük
+- **500**: Sunucu hatası
+
+Bu endpoint ile çoklu PDF yükleme işlemi başlatılır ve her dosya için ayrı task oluşturulur. Progress takibi için batch_id kullanılır.

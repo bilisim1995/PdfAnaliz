@@ -36,6 +36,40 @@ def main():
     # DeepSeek API Key
     api_key = os.getenv("DEEPSEEK_API_KEY", "")
     
+    # API Upload Configuration
+    st.sidebar.divider()
+    st.sidebar.subheader("📤 Veri Yükleme Ayarları")
+    
+    api_url = st.sidebar.text_input(
+        "API URL:",
+        value="https://api.example.com",
+        help="Bulk upload endpoint URL'i (örn: https://api.example.com/api/admin/documents/bulk-upload)"
+    )
+    
+    api_token = st.sidebar.text_input(
+        "Authorization Token:",
+        type="password",
+        help="Bearer token (örn: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...)"
+    )
+    
+    category = st.sidebar.text_input(
+        "Kategori:",
+        value="mevzuat",
+        help="Doküman kategorisi (örn: mevzuat, kanun)"
+    )
+    
+    institution = st.sidebar.text_input(
+        "Kurum:",
+        value="",
+        help="Kurum adı (örn: TBB, Adalet Bakanlığı)"
+    )
+    
+    belge_adi = st.sidebar.text_input(
+        "Belge Adı:",
+        value="",
+        help="Belge adı (örn: TCK_2024)"
+    )
+    
     # PDF source selection
     st.header("1️⃣ PDF Kaynağını Seçin")
     source_option = st.radio(
@@ -185,6 +219,27 @@ def main():
         # Show output directory
         if st.session_state.output_dir:
             st.info(f"📁 Bölümlenmiş PDF dosyaları şurada kaydedildi: `{st.session_state.output_dir}`")
+        
+        # Upload to API button
+        st.divider()
+        st.subheader("📤 Verileri API'ye Yükle")
+        
+        # Validate API configuration
+        upload_ready = all([api_url, api_token, category, institution, belge_adi])
+        
+        if not upload_ready:
+            st.warning("⚠️ Veri yüklemek için lütfen sol taraftaki tüm API ayarlarını doldurun (API URL, Token, Kategori, Kurum, Belge Adı)")
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button(
+                "📤 Verileri Yükle", 
+                type="primary", 
+                use_container_width=True,
+                disabled=not upload_ready,
+                help="Bölümlenmiş PDF'leri ve metadata'yı API'ye yükler"
+            ):
+                upload_to_api(api_url, api_token, category, institution, belge_adi)
         
         # Reset button
         st.divider()
@@ -443,6 +498,108 @@ def split_pdf_files():
         
     except Exception as e:
         st.error(f"❌ PDF parçalama sırasında hata oluştu: {str(e)}")
+        st.exception(e)
+
+def upload_to_api(api_url, api_token, category, institution, belge_adi):
+    """Upload split PDFs and metadata to API endpoint"""
+    try:
+        import requests
+        
+        with st.spinner("📤 Veriler API'ye yükleniyor..."):
+            # Prepare metadata in the required format
+            metadata_payload = {
+                "pdf_sections": []
+            }
+            
+            for item in st.session_state.metadata_list:
+                section_data = {
+                    "output_filename": item.get("output_filename", ""),
+                    "title": item.get("title", ""),
+                    "description": item.get("description", ""),
+                    "keywords": item.get("keywords", "")
+                }
+                metadata_payload["pdf_sections"].append(section_data)
+            
+            # Prepare files
+            files_to_upload = []
+            output_dir = Path(st.session_state.output_dir)
+            
+            # Collect all PDF files from output directory
+            pdf_files = sorted(output_dir.glob("*.pdf"))
+            
+            if not pdf_files:
+                st.error("❌ Yüklenecek PDF dosyası bulunamadı!")
+                return
+            
+            # Open all PDF files
+            file_handles = []
+            for pdf_file in pdf_files:
+                f = open(pdf_file, 'rb')
+                file_handles.append(f)
+                files_to_upload.append(('files', (pdf_file.name, f, 'application/pdf')))
+            
+            # Prepare form data
+            form_data = {
+                'category': category,
+                'institution': institution,
+                'belge_adi': belge_adi,
+                'metadata': json.dumps(metadata_payload, ensure_ascii=False)
+            }
+            
+            # Prepare headers
+            headers = {
+                'Authorization': f'Bearer {api_token}'
+            }
+            
+            # Make API request
+            try:
+                response = requests.post(
+                    api_url,
+                    headers=headers,
+                    data=form_data,
+                    files=files_to_upload,
+                    timeout=300  # 5 minutes timeout
+                )
+                
+                # Close all file handles
+                for f in file_handles:
+                    f.close()
+                
+                # Check response
+                if response.status_code == 200:
+                    result = response.json()
+                    st.success("✅ Veriler başarıyla yüklendi!")
+                    
+                    # Display response
+                    st.subheader("📊 API Yanıtı")
+                    st.json(result)
+                    
+                    # Show batch ID if available
+                    if 'data' in result and 'batch_id' in result['data']:
+                        batch_id = result['data']['batch_id']
+                        st.info(f"🆔 Batch ID: `{batch_id}`")
+                        st.caption(f"Toplam {result['data'].get('total_files', 0)} dosya yüklendi.")
+                    
+                    st.balloons()
+                    
+                else:
+                    st.error(f"❌ API Hatası: {response.status_code}")
+                    st.code(response.text, language="json")
+                    
+            except requests.exceptions.Timeout:
+                st.error("❌ İstek zaman aşımına uğradı. Lütfen tekrar deneyin.")
+            except requests.exceptions.RequestException as e:
+                st.error(f"❌ Bağlantı hatası: {str(e)}")
+            finally:
+                # Make sure all files are closed
+                for f in file_handles:
+                    try:
+                        f.close()
+                    except:
+                        pass
+                        
+    except Exception as e:
+        st.error(f"❌ Veri yükleme hatası: {str(e)}")
         st.exception(e)
 
 def reset_and_cleanup():
