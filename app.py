@@ -191,10 +191,19 @@ def main():
 def analyze_and_prepare(pdf_path, api_key, sectioning_mode, min_pages, max_pages):
     """Analyze PDF and prepare metadata without splitting files"""
     try:
+        # Clean up any existing output directory from previous analysis
+        # (Users starting a new analysis should download previous results first if needed)
+        if st.session_state.output_dir and os.path.exists(st.session_state.output_dir):
+            try:
+                shutil.rmtree(st.session_state.output_dir)
+            except Exception:
+                pass  # Ignore cleanup errors
+        
         # Reset state for new analysis
         st.session_state.processing_complete = False
         st.session_state.analysis_complete = False
         st.session_state.json_output = ""
+        st.session_state.output_dir = ""
         
         # PDF yolunu kaydet
         st.session_state.pdf_path_temp = pdf_path
@@ -209,24 +218,17 @@ def analyze_and_prepare(pdf_path, api_key, sectioning_mode, min_pages, max_pages
         processor = PDFProcessor()
         analyzer = DeepSeekAnalyzer(api_key)
         
-        # Step 2: Create output directories
-        status_text.text("📁 Çıktı klasörleri oluşturuluyor...")
-        progress_bar.progress(20)
-        
-        output_dir = create_output_directories()
-        st.session_state.output_dir = output_dir
-        
-        # Step 3: Analyze PDF structure
+        # Step 2: Analyze PDF structure
         status_text.text("📖 PDF yapısı analiz ediliyor...")
-        progress_bar.progress(30)
+        progress_bar.progress(20)
         
         pdf_info = processor.analyze_pdf_structure(pdf_path)
         st.info(f"📄 PDF Bilgisi: {pdf_info['total_pages']} sayfa tespit edildi")
         
-        # Step 4: Create optimal sections
+        # Step 3: Create optimal sections
         if sectioning_mode == "🤖 Akıllı Bölümleme (AI bazlı, içeriğe göre)":
             status_text.text("🤖 AI ile içerik bazlı bölümler oluşturuluyor...")
-            progress_bar.progress(40)
+            progress_bar.progress(30)
             
             try:
                 sections = processor.create_intelligent_sections(
@@ -266,14 +268,14 @@ def analyze_and_prepare(pdf_path, api_key, sectioning_mode, min_pages, max_pages
         # Session state'e sections'ı kaydet
         st.session_state.sections = sections
         
-        progress_bar.progress(50)
+        progress_bar.progress(40)
         
         if sectioning_mode != "🤖 Akıllı Bölümleme (AI bazlı, içeriğe göre)":
             st.info(f"📝 {len(sections)} bölüm oluşturuldu")
         
-        # Step 5: Analyze content and prepare metadata (WITHOUT creating PDF files)
+        # Step 4: Analyze content and prepare metadata (WITHOUT creating PDF files)
         status_text.text("🤖 AI ile içerik analiz ediliyor...")
-        progress_bar.progress(70)
+        progress_bar.progress(60)
         
         metadata_list = []
         
@@ -334,16 +336,16 @@ def analyze_and_prepare(pdf_path, api_key, sectioning_mode, min_pages, max_pages
             metadata_list.append(metadata)
             
             # Update progress
-            section_progress = 70 + (i + 1) / len(sections) * 20
+            section_progress = 60 + (i + 1) / len(sections) * 25
             progress_bar.progress(int(section_progress))
             status_text.text(f"🤖 Bölüm {i + 1}/{len(sections)} analiz edildi...")
         
         # Save metadata list to session state
         st.session_state.metadata_list = metadata_list
         
-        # Step 6: Generate final JSON
+        # Step 5: Generate final JSON
         status_text.text("📄 JSON çıktısı oluşturuluyor...")
-        progress_bar.progress(95)
+        progress_bar.progress(90)
         
         final_json = {
             "pdf_sections": metadata_list
@@ -376,12 +378,15 @@ def split_pdf_files():
         metadata_list = st.session_state.metadata_list
         sections = st.session_state.sections
         
-        # Step 1: Create output directories
-        status_text.text("📁 Çıktı klasörleri oluşturuluyor...")
+        # Step 1: Create output directories (only if not already created)
+        status_text.text("📁 Çıktı klasörleri hazırlanıyor...")
         progress_bar.progress(10)
         
-        output_dir = create_output_directories()
-        st.session_state.output_dir = output_dir
+        if not st.session_state.output_dir or not os.path.exists(st.session_state.output_dir):
+            output_dir = create_output_directories()
+            st.session_state.output_dir = output_dir
+        else:
+            output_dir = st.session_state.output_dir
         
         # Step 2: Split PDF files
         status_text.text("✂️ PDF dosyaları parçalanıyor...")
