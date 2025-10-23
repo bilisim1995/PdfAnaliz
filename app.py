@@ -42,6 +42,12 @@ def main():
     if 'api_base_url' not in st.session_state:
         st.session_state.api_base_url = ""
     
+    # Document name suggestion
+    if 'suggested_doc_name' not in st.session_state:
+        st.session_state.suggested_doc_name = ""
+    if 'pdf_page_count' not in st.session_state:
+        st.session_state.pdf_page_count = 0
+    
     # Check login status
     if not st.session_state.logged_in:
         show_login_page()
@@ -79,11 +85,26 @@ def main():
         help="Kurum adı (örn: TBB, Adalet Bakanlığı)"
     )
     
+    # Initialize belge_adi from session state if exists
+    if 'belge_adi_value' not in st.session_state:
+        st.session_state.belge_adi_value = ""
+    
     belge_adi = st.sidebar.text_input(
         "Belge Adı:",
-        value="",
-        help="Belge adı (örn: TCK_2024)"
+        value=st.session_state.belge_adi_value,
+        help="Belge adı (örn: TCK_2024)",
+        key="belge_adi_input"
     )
+    
+    # Update session state
+    st.session_state.belge_adi_value = belge_adi
+    
+    # Show document name suggestion if available
+    if st.session_state.suggested_doc_name:
+        st.sidebar.caption(f"💡 Öneri: **{st.session_state.suggested_doc_name}**")
+        if st.sidebar.button("✅ Öneriyi Uygula", key="apply_suggestion", use_container_width=True):
+            st.session_state.belge_adi_value = st.session_state.suggested_doc_name
+            st.rerun()
     
     # PDF source selection
     st.header("1️⃣ PDF Kaynağını Seçin")
@@ -299,7 +320,34 @@ def analyze_and_prepare(pdf_path, api_key, sectioning_mode, min_pages, max_pages
         progress_bar.progress(20)
         
         pdf_info = processor.analyze_pdf_structure(pdf_path)
-        st.info(f"📄 PDF Bilgisi: {pdf_info['total_pages']} sayfa tespit edildi")
+        total_pages = pdf_info['total_pages']
+        
+        # Store page count in session state
+        st.session_state.pdf_page_count = total_pages
+        
+        st.info(f"📄 PDF Bilgisi: {total_pages} sayfa tespit edildi")
+        
+        # Check if PDF has very few pages
+        if total_pages <= 5:
+            st.warning(f"⚠️ Bu PDF sadece {total_pages} sayfa içeriyor. Parçalama yapmadan doğrudan kullanabilirsiniz.")
+            st.info("💡 Yine de devam edebilir veya tüm PDF'i tek dosya olarak yükleyebilirsiniz.")
+        
+        # Step 2.5: Get document name suggestion
+        status_text.text("💡 Belge adı önerisi oluşturuluyor...")
+        try:
+            # İlk 3 sayfadan örnek metin al
+            sample_text = processor.extract_text_from_pages(pdf_path, 1, min(3, total_pages))
+            
+            # Belge adı önerisi al
+            if sample_text.strip():
+                suggested_name = analyzer.suggest_document_name(sample_text)
+                st.session_state.suggested_doc_name = suggested_name
+                st.success(f"💡 Belge adı önerisi: **{suggested_name}**")
+        except Exception as e:
+            print(f"Belge adı önerisi hatası: {str(e)}")
+            st.session_state.suggested_doc_name = ""
+        
+        progress_bar.progress(25)
         
         # Step 3: Create optimal sections
         if sectioning_mode == "🤖 Akıllı Bölümleme (AI bazlı, içeriğe göre)":
@@ -733,6 +781,9 @@ def logout():
     st.session_state.pdf_path_temp = ""
     st.session_state.pdf_base_name = ""
     st.session_state.metadata_list = []
+    st.session_state.suggested_doc_name = ""
+    st.session_state.pdf_page_count = 0
+    st.session_state.belge_adi_value = ""
 
 def reset_and_cleanup():
     """Reset all session state and clean up files"""
@@ -753,6 +804,8 @@ def reset_and_cleanup():
     st.session_state.pdf_path_temp = ""
     st.session_state.pdf_base_name = ""
     st.session_state.metadata_list = []
+    st.session_state.suggested_doc_name = ""
+    st.session_state.pdf_page_count = 0
 
 if __name__ == "__main__":
     main()

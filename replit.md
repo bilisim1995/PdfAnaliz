@@ -31,6 +31,15 @@ This is a Streamlit-based web application that processes PDF documents and segme
   - PDF download from URL: 120 seconds (2 minutes)
   - Login API call: 60 seconds (1 minute)
   - Bulk upload API call: 300 seconds (5 minutes)
+- **Smart Document Naming**: AI-powered document name suggestions
+  - Analyzes PDF content (first 3 pages) to suggest relevant document names
+  - Displays suggestion below "Belge Adı" field in sidebar
+  - "Öneriyi Uygula" button applies suggestion to input field
+  - Automatically updates during PDF analysis phase
+- **Low Page Count Warning**: Added warning for PDFs with 5 or fewer pages
+  - Alerts users that splitting may not be necessary for short documents
+  - Suggests using the PDF directly without splitting
+  - Still allows proceeding with analysis if user prefers
 
 ## Previous Changes (October 22, 2025)
 

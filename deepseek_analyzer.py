@@ -237,6 +237,75 @@ Bu PDF'i anlam bütünlüğü olan, RAG için optimal bölümlere ayır. Her bö
             # Fallback: Basit eşit bölümleme
             return self._create_fallback_sections(total_pages)
     
+    def suggest_document_name(self, text_content: str) -> str:
+        """PDF içeriğinden belge adı önerisi oluşturur"""
+        try:
+            # İçerik çok uzunsa ilk 3000 karakteri al
+            if len(text_content) > 3000:
+                text_content = text_content[:3000]
+            
+            prompt = f"""
+Aşağıdaki PDF dokümanının içeriğine bakarak, bu doküman için KISA ve AÇIKLAYICI bir belge adı öner.
+
+İÇERİK:
+{text_content}
+
+GÖREV:
+Bu PDF için profesyonel bir belge adı öner. Belge adı:
+- Kısa ve öz olmalı (maksimum 50 karakter)
+- Türkçe karakterler kullanabilir
+- İçeriği en iyi özetlemeli
+- Dosya sistemi için uygun olmalı (özel karakterler yok)
+- Sadece belge adını ver, açıklama yapma
+
+ÖRNEK ÇıKTıLAR:
+- TCK_2024
+- Otopark_Yonetmeligi_2024
+- Sosyal_Guvenlik_Kanunu
+- Isci_Sagligi_Rehberi
+
+SADECE BELGE ADI ÇIKTISI VER (JSON veya başka format yok):
+"""
+
+            response = self.client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Sen bir belge adlandırma uzmanısın. Verilen içeriğe göre kısa ve profesyonel belge adları öneriyorsun."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.3,
+                max_tokens=100
+            )
+            
+            suggested_name = response.choices[0].message.content
+            if not suggested_name:
+                return "Belge_Adi"
+            
+            suggested_name = suggested_name.strip()
+            
+            # Özel karakterleri temizle
+            suggested_name = re.sub(r'[<>:"/\\|?*]', '', suggested_name)
+            suggested_name = suggested_name.strip()
+            
+            # Boşlukları alt çizgiye çevir
+            suggested_name = re.sub(r'\s+', '_', suggested_name)
+            
+            # Çok uzunsa kısalt
+            if len(suggested_name) > 50:
+                suggested_name = suggested_name[:50]
+            
+            return suggested_name if suggested_name else "Belge_Adi"
+            
+        except Exception as e:
+            print(f"Belge adı önerisi hatası: {str(e)}")
+            return "Belge_Adi"
+    
     def _validate_sections(self, sections: list, total_pages: int) -> list:
         """Bölümlerin geçerliliğini kontrol eder ve düzeltir"""
         if not sections:
