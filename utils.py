@@ -127,6 +127,23 @@ def extract_filename_from_url(url: str) -> str:
     except Exception:
         return f"document_{uuid.uuid4().hex[:8]}.pdf"
 
+def transliterate_turkish(text: str) -> str:
+    """Türkçe karakterleri İngilizce karakterlere çevirir"""
+    turkish_map = {
+        'ç': 'c', 'Ç': 'C',
+        'ğ': 'g', 'Ğ': 'G',
+        'ı': 'i', 'İ': 'I',
+        'ö': 'o', 'Ö': 'O',
+        'ş': 's', 'Ş': 'S',
+        'ü': 'u', 'Ü': 'U'
+    }
+    
+    result = text
+    for turkish_char, english_char in turkish_map.items():
+        result = result.replace(turkish_char, english_char)
+    
+    return result
+
 def sanitize_filename(filename: str) -> str:
     """Dosya adını güvenli hale getirir"""
     import re
@@ -135,4 +152,34 @@ def sanitize_filename(filename: str) -> str:
     filename = filename.strip('. ')
     if not filename:
         filename = f"file_{uuid.uuid4().hex[:8]}"
+    return filename
+
+def create_pdf_filename(base_name: str, section_num: int, start_page: int, end_page: int, title: str = "") -> str:
+    """PDF bölüm dosya adı oluşturur (Türkçe karaktersiz)"""
+    import re
+    
+    # Başlığı kullan, yoksa base_name kullan
+    if title and title != "İçerik Tespit Edilemedi" and title != "API Analiz Hatası":
+        # Başlıktan dosya adı oluştur
+        filename = transliterate_turkish(title)
+        # Özel karakterleri temizle
+        filename = re.sub(r'[^\w\s-]', '', filename)
+        # Boşlukları alt çizgiye çevir
+        filename = re.sub(r'\s+', '_', filename)
+        # Çok uzunsa kısalt
+        if len(filename) > 80:
+            filename = filename[:80]
+    else:
+        # Base name'den oluştur
+        filename = transliterate_turkish(base_name)
+        filename = re.sub(r'[^\w\s-]', '', filename)
+        filename = re.sub(r'\s+', '_', filename)
+        filename = f"{filename}_Bolum_{section_num}"
+    
+    # Sayfa numaralarını ekle
+    filename = f"{section_num:02d}_{filename}_{start_page}-{end_page}.pdf"
+    
+    # Temizle ve güvenli hale getir
+    filename = filename.strip('_')
+    
     return filename
