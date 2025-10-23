@@ -34,7 +34,7 @@ def main():
     st.sidebar.header("⚙️ Ayarlar")
     
     # DeepSeek API Key
-    api_key = os.getenv("DEEPSEEK_API_KEY", "sk-8c15dc40c6b44cde9880f7a47b4be333")
+    api_key = os.getenv("DEEPSEEK_API_KEY", "")
     
     # PDF source selection
     st.header("1️⃣ PDF Kaynağını Seçin")
@@ -191,6 +191,11 @@ def main():
 def analyze_and_prepare(pdf_path, api_key, sectioning_mode, min_pages, max_pages):
     """Analyze PDF and prepare metadata without splitting files"""
     try:
+        # Reset state for new analysis
+        st.session_state.processing_complete = False
+        st.session_state.analysis_complete = False
+        st.session_state.json_output = ""
+        
         # PDF yolunu kaydet
         st.session_state.pdf_path_temp = pdf_path
         # Create progress bar

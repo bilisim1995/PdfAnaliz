@@ -5,51 +5,72 @@ from pathlib import Path
 from urllib.parse import urlparse
 import uuid
 
-def download_pdf_from_url(url: str) -> str:
+def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
     """URL'den PDF indirir ve geçici klasöre kaydeder"""
-    try:
-        # URL'yi doğrula
-        parsed_url = urlparse(url)
-        if not parsed_url.scheme or not parsed_url.netloc:
-            raise ValueError("Geçersiz URL formatı")
+    import time
+    
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            # URL'yi doğrula
+            parsed_url = urlparse(url)
+            if not parsed_url.scheme or not parsed_url.netloc:
+                raise ValueError("Geçersiz URL formatı")
+            
+            # HTTP headers
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'application/pdf,*/*'
+            }
+            
+            # PDF'i indir (daha uzun timeout ve allow_redirects)
+            response = requests.get(url, headers=headers, timeout=60, allow_redirects=True)
+            response.raise_for_status()
         
-        # HTTP headers
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        
-        # PDF'i indir
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-        
-        # Content-Type kontrolü
-        content_type = response.headers.get('content-type', '').lower()
-        if 'pdf' not in content_type and not url.lower().endswith('.pdf'):
-            # İçeriği kontrol et (PDF magic number)
-            if not response.content.startswith(b'%PDF-'):
-                raise ValueError("İndirilen dosya PDF formatında değil")
-        
-        # Geçici dosya oluştur
-        temp_dir = tempfile.gettempdir()
-        filename = f"downloaded_pdf_{uuid.uuid4().hex[:8]}.pdf"
-        temp_path = os.path.join(temp_dir, filename)
-        
-        # Dosyayı kaydet
-        with open(temp_path, 'wb') as f:
-            f.write(response.content)
-        
-        # Dosya boyutunu kontrol et
-        file_size = os.path.getsize(temp_path)
-        if file_size < 1024:  # 1KB'dan küçükse
-            os.remove(temp_path)
-            raise ValueError("İndirilen dosya çok küçük (PDF olmayabilir)")
-        
-        return temp_path
-        
-    except requests.exceptions.RequestException as e:
-        raise Exception(f"URL'den indirme hatası: {str(e)}")
-    except Exception as e:
-        raise Exception(f"PDF indirme hatası: {str(e)}")
+            # Content-Type kontrolü
+            content_type = response.headers.get('content-type', '').lower()
+            if 'pdf' not in content_type and not url.lower().endswith('.pdf'):
+                # İçeriği kontrol et (PDF magic number)
+                if not response.content.startswith(b'%PDF-'):
+                    raise ValueError("İndirilen dosya PDF formatında değil")
+            
+            # Geçici dosya oluştur
+            temp_dir = tempfile.gettempdir()
+            filename = f"downloaded_pdf_{uuid.uuid4().hex[:8]}.pdf"
+            temp_path = os.path.join(temp_dir, filename)
+            
+            # Dosyayı kaydet
+            with open(temp_path, 'wb') as f:
+                f.write(response.content)
+            
+            # Dosya boyutunu kontrol et
+            file_size = os.path.getsize(temp_path)
+            if file_size < 1024:  # 1KB'dan küçükse
+                os.remove(temp_path)
+                raise ValueError("İndirilen dosya çok küçük (PDF olmayabilir)")
+            
+            return temp_path
+            
+        except (requests.exceptions.RequestException, ValueError) as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                # Son deneme değilse, kısa bir süre bekle ve tekrar dene
+                wait_time = (attempt + 1) * 2  # 2, 4, 6 saniye
+                time.sleep(wait_time)
+            continue
+        except Exception as e:
+            # Diğer hatalar için hemen çık
+            raise Exception(f"PDF indirme hatası: {str(e)}")
+    
+    # Tüm denemeler başarısız olduysa
+    if last_error:
+        if isinstance(last_error, requests.exceptions.RequestException):
+            raise Exception(f"URL'den indirme hatası ({max_retries} deneme sonucu): {str(last_error)}")
+        else:
+            raise Exception(f"PDF indirme hatası ({max_retries} deneme sonucu): {str(last_error)}")
+    
+    raise Exception("PDF indirilemedi (bilinmeyen hata)")
 
 def create_output_directories() -> str:
     """Çıktı klasörlerini oluşturur"""
