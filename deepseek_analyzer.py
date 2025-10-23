@@ -9,7 +9,8 @@ class DeepSeekAnalyzer:
     def __init__(self, api_key: str):
         self.client = openai.OpenAI(
             api_key=api_key,
-            base_url="https://api.deepseek.com"
+            base_url="https://api.deepseek.com",
+            timeout=120.0  # 2 dakika timeout
         )
     
     def analyze_section_content(self, text_content: str) -> Dict[str, Any]:

@@ -685,7 +685,7 @@ def login(api_base_url, email, password):
                 login_url,
                 headers={"Content-Type": "application/json"},
                 json=login_data,
-                timeout=30
+                timeout=60  # 1 dakika timeout
             )
             
             if response.status_code == 200:

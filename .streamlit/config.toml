@@ -2,3 +2,15 @@
 headless = true
 address = "0.0.0.0"
 port = 5000
+maxUploadSize = 200
+enableXsrfProtection = false
+maxMessageSize = 200
+
+[runner]
+# Script execution timeout (seconds)
+# Set to -1 to disable timeout (not recommended for production)
+# Default is 600 seconds (10 minutes)
+scriptTimeoutSeconds = 1800
+
+[browser]
+gatherUsageStats = false

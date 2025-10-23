@@ -25,6 +25,12 @@ This is a Streamlit-based web application that processes PDF documents and segme
   - Session state manages authentication (access_token, refresh_token, user_info)
   - Login page displays API base URL, email, and password inputs
   - Logout functionality clears session and returns to login page
+- **Extended Timeouts**: Increased timeout limits for long-running operations
+  - Streamlit script execution: 1800 seconds (30 minutes)
+  - DeepSeek API calls: 120 seconds (2 minutes)
+  - PDF download from URL: 120 seconds (2 minutes)
+  - Login API call: 60 seconds (1 minute)
+  - Bulk upload API call: 300 seconds (5 minutes)
 
 ## Previous Changes (October 22, 2025)
 

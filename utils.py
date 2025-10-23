@@ -25,7 +25,7 @@ def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
             }
             
             # PDF'i indir (daha uzun timeout ve allow_redirects)
-            response = requests.get(url, headers=headers, timeout=60, allow_redirects=True)
+            response = requests.get(url, headers=headers, timeout=120, allow_redirects=True)  # 2 dakika timeout
             response.raise_for_status()
         
             # Content-Type kontrolü
