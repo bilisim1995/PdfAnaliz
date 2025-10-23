@@ -4,9 +4,66 @@ import tempfile
 from pathlib import Path
 import json
 import shutil
+import requests
 from pdf_processor import PDFProcessor
 from deepseek_analyzer import DeepSeekAnalyzer
 from utils import download_pdf_from_url, create_output_directories, create_pdf_filename
+
+def load_config():
+    """Load configuration from config.json"""
+    try:
+        with open('config.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        st.error(f"❌ config.json dosyası okunamadı: {str(e)}")
+        return None
+
+def auto_login(config):
+    """Automatically login using credentials from config.json"""
+    try:
+        api_base_url = config.get("api_base_url")
+        email = config.get("admin_email")
+        password = config.get("admin_password")
+        
+        if not all([api_base_url, email, password]):
+            st.error("❌ config.json eksik bilgiler içeriyor!")
+            return False
+        
+        # Prepare login endpoint
+        login_url = f"{api_base_url.rstrip('/')}/api/auth/login"
+        
+        # Prepare request body
+        login_data = {
+            "email": email,
+            "password": password
+        }
+        
+        # Make login request
+        response = requests.post(
+            login_url,
+            headers={"Content-Type": "application/json"},
+            json=login_data,
+            timeout=60
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            # Save to session state
+            st.session_state.logged_in = True
+            st.session_state.access_token = result.get("access_token", "")
+            st.session_state.refresh_token = result.get("refresh_token", "")
+            st.session_state.user_info = result.get("user", {})
+            st.session_state.api_base_url = api_base_url
+            
+            return True
+        else:
+            st.error(f"❌ Otomatik giriş başarısız: HTTP {response.status_code}")
+            return False
+            
+    except Exception as e:
+        st.error(f"❌ Otomatik giriş hatası: {str(e)}")
+        return False
 
 def main():
     st.title("📄 PDF RAG Bölümlendirme Aracı")
@@ -48,9 +105,20 @@ def main():
     if 'pdf_page_count' not in st.session_state:
         st.session_state.pdf_page_count = 0
     
-    # Check login status
+    # Auto-login from config.json
     if not st.session_state.logged_in:
-        show_login_page()
+        config = load_config()
+        if config:
+            auto_login(config)
+        else:
+            st.error("❌ Giriş bilgileri yüklenemedi. config.json dosyasını kontrol edin.")
+            st.stop()
+            return
+    
+    # Check if login was successful
+    if not st.session_state.logged_in:
+        st.error("❌ Otomatik giriş başarısız oldu.")
+        st.stop()
         return
     
     # Sidebar for logged-in users
