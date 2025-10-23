@@ -39,11 +39,11 @@ Bu içerik için aşağıdaki bilgileri oluştur:
 
 1. BAŞLIK: İçeriğin ana konusunu özetleyen kısa ve açıklayıcı başlık (maksimum 100 karakter)
 2. AÇIKLAMA: İçeriğin detaylı açıklaması, ne hakkında olduğu, hangi konuları kapsadığı (150-300 kelime)
-3. ANAHTAR KELİMELER: RAG sisteminde arama için kullanılacak anahtar kelimeler (virgülle ayrılmış, alt çizgi kullan, maksimum 15 kelime)
+3. ANAHTAR KELİMELER: RAG sisteminde arama için kullanılacak anahtar kelimeler (virgülle ayrılmış, maksimum 15 kelime)
 
 KURALLAR:
 - Türkçe karakter kullan
-- Anahtar kelimelerde boşluk yerine alt çizgi kullan (örn: "prim_borcu")
+- Anahtar kelimeleri normal şekilde yaz, boşlukları koru (örn: "prim borcu,sosyal güvenlik")
 - Teknik terimler ve mevzuat referansları önemli
 - RAG sisteminde bulunabilirlik için optimize et
 - Sadece verilen içeriğe dayalı bilgi ver
@@ -96,7 +96,7 @@ KURALLAR:
             return {
                 'title': 'API Analiz Hatası',
                 'description': f"Bu bölümün AI analizi yapılamadı. Hata: {str(e)}. İçerik yaklaşık {len(text_content)} karakter barındırmaktadır.",
-                'keywords': 'api_hatası,analiz_yapılamadı'
+                'keywords': 'api hatası,analiz yapılamadı'
             }
     
     def _clean_analysis_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
@@ -122,10 +122,10 @@ KURALLAR:
         # Anahtar kelimeleri temizle
         keywords = result.get('keywords', '').strip()
         if not keywords:
-            keywords = "pdf_bölümü,doküman"
+            keywords = "pdf bölümü,doküman"
         else:
-            # Anahtar kelimeleri işle
-            keyword_list = [kw.strip().lower().replace(' ', '_') for kw in keywords.split(',')]
+            # Anahtar kelimeleri işle (boşlukları koru)
+            keyword_list = [kw.strip() for kw in keywords.split(',')]
             keyword_list = [kw for kw in keyword_list if kw and len(kw) > 1][:15]  # Maksimum 15 kelime
             keywords = ','.join(keyword_list)
         
@@ -146,13 +146,12 @@ KURALLAR:
         for word in text_content.split():
             word = word.strip().lower()
             if len(word) > 3 and word.isalpha():
-                word = word.replace(' ', '_')
                 if word not in common_words:
                     common_words.append(word)
                 if len(common_words) >= 5:
                     break
         
-        keywords = ','.join(common_words) if common_words else "pdf_içerik,doküman"
+        keywords = ','.join(common_words) if common_words else "pdf içerik,doküman"
         
         return {
             'title': title,

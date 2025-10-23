@@ -318,7 +318,7 @@ def analyze_and_prepare(pdf_path, api_key, sectioning_mode, min_pages, max_pages
                     "end_page": section['end_page'],
                     "title": title,
                     "description": analysis.get('description', 'Bu bölüm için açıklama oluşturulamadı.'),
-                    "keywords": analysis.get('keywords', f'bölüm_{i + 1}')
+                    "keywords": analysis.get('keywords', f'bölüm {i + 1}')
                 }
             else:
                 # Fallback for sections with no extractable text
@@ -336,7 +336,7 @@ def analyze_and_prepare(pdf_path, api_key, sectioning_mode, min_pages, max_pages
                     "end_page": section['end_page'],
                     "title": f"Bölüm {i + 1}",
                     "description": "Bu bölümde metin içeriği tespit edilemedi. Görsel içerik veya tablo bulunuyor olabilir.",
-                    "keywords": f"bölüm_{i + 1},görsel_içerik"
+                    "keywords": f"bölüm {i + 1},görsel içerik"
                 }
             
             metadata_list.append(metadata)
