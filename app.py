@@ -6,7 +6,7 @@ import json
 import shutil
 from pdf_processor import PDFProcessor
 from deepseek_analyzer import DeepSeekAnalyzer
-from utils import download_pdf_from_url, create_output_directories
+from utils import download_pdf_from_url, create_output_directories, create_pdf_filename
 
 def main():
     st.title("📄 PDF RAG Bölümlendirme Aracı")
@@ -19,6 +19,16 @@ def main():
         st.session_state.json_output = ""
     if 'output_dir' not in st.session_state:
         st.session_state.output_dir = ""
+    if 'sections' not in st.session_state:
+        st.session_state.sections = []
+    if 'analysis_complete' not in st.session_state:
+        st.session_state.analysis_complete = False
+    if 'pdf_path_temp' not in st.session_state:
+        st.session_state.pdf_path_temp = ""
+    if 'pdf_base_name' not in st.session_state:
+        st.session_state.pdf_base_name = ""
+    if 'metadata_list' not in st.session_state:
+        st.session_state.metadata_list = []
     
     # Sidebar for configuration
     st.sidebar.header("⚙️ Ayarlar")
@@ -35,6 +45,7 @@ def main():
     
     pdf_file = None
     pdf_path = None
+    uploaded_file = None
     
     if source_option == "💻 Bilgisayardan dosya yükle":
         uploaded_file = st.file_uploader(
@@ -107,11 +118,41 @@ def main():
                 st.warning("⚠️ Akıllı bölümleme için DeepSeek API anahtarı gereklidir. Lütfen önce API anahtarınızı girin.")
         
         # Process PDF button
-        if st.button("🚀 PDF'i İşle ve Analiz Et", type="primary"):
+        if st.button("🚀 PDF'i Analiz Et ve Bölümle", type="primary"):
             if sectioning_mode == "📏 Manuel Bölümleme (sabit sayfa aralığı)" and min_pages_per_section >= max_pages_per_section:
                 st.error("❌ Minimum sayfa sayısı, maximum sayfa sayısından küçük olmalıdır!")
             else:
-                process_pdf(pdf_path, api_key, sectioning_mode, min_pages_per_section, max_pages_per_section)
+                # PDF dosya adını kaydet
+                if source_option == "💻 Bilgisayardan dosya yükle" and uploaded_file:
+                    st.session_state.pdf_base_name = Path(uploaded_file.name).stem
+                else:
+                    st.session_state.pdf_base_name = "document"
+                
+                analyze_and_prepare(pdf_path, api_key, sectioning_mode, min_pages_per_section, max_pages_per_section)
+    
+    # Analysis results section
+    if st.session_state.analysis_complete and not st.session_state.processing_complete:
+        st.header("2️⃣ Analiz Sonuçları ve JSON Önizleme")
+        
+        # Display JSON output
+        st.subheader("📊 Oluşturulacak Bölümler (JSON)")
+        st.text_area(
+            "JSON Çıktısı:",
+            value=st.session_state.json_output,
+            height=400,
+            help="PDF parçalandığında bu yapıda bölümler oluşturulacak"
+        )
+        
+        # Split PDF button
+        st.divider()
+        col1, col2, col3 = st.columns([2, 2, 1])
+        with col2:
+            if st.button("📄 PDF'leri Parçala ve Kaydet", type="primary", help="JSON'a göre PDF'leri bölümlere ayırıp kaydeder"):
+                split_pdf_files()
+        with col3:
+            if st.button("🔄 Yeniden Başla", help="Analizi iptal et ve başa dön"):
+                reset_and_cleanup()
+                st.rerun()
     
     # Results section
     if st.session_state.processing_complete:
@@ -147,9 +188,11 @@ def main():
                 reset_and_cleanup()
                 st.rerun()
 
-def process_pdf(pdf_path, api_key, sectioning_mode, min_pages, max_pages):
-    """Process PDF file and create sections"""
+def analyze_and_prepare(pdf_path, api_key, sectioning_mode, min_pages, max_pages):
+    """Analyze PDF and prepare metadata without splitting files"""
     try:
+        # PDF yolunu kaydet
+        st.session_state.pdf_path_temp = pdf_path
         # Create progress bar
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -215,27 +258,21 @@ def process_pdf(pdf_path, api_key, sectioning_mode, min_pages, max_pages):
                 max_pages
             )
         
+        # Session state'e sections'ı kaydet
+        st.session_state.sections = sections
+        
         progress_bar.progress(50)
         
         if sectioning_mode != "🤖 Akıllı Bölümleme (AI bazlı, içeriğe göre)":
             st.info(f"📝 {len(sections)} bölüm oluşturuldu")
         
-        # Step 5: Generate section files and analyze content
+        # Step 5: Analyze content and prepare metadata (WITHOUT creating PDF files)
         status_text.text("🤖 AI ile içerik analiz ediliyor...")
         progress_bar.progress(70)
         
         metadata_list = []
         
         for i, section in enumerate(sections):
-            # Create section PDF
-            section_path = processor.create_section_pdf(
-                pdf_path, 
-                section['start_page'], 
-                section['end_page'], 
-                output_dir, 
-                i + 1
-            )
-            
             # Extract text for analysis
             section_text = processor.extract_text_from_pages(
                 pdf_path, 
@@ -251,18 +288,37 @@ def process_pdf(pdf_path, api_key, sectioning_mode, min_pages, max_pages):
                 if 'API Analiz Hatası' in analysis.get('title', ''):
                     st.warning(f"⚠️ Bölüm {i + 1} için AI analizi başarısız oldu. Hata: {analysis.get('description', '')}")
                 
+                title = analysis.get('title', f'Bölüm {i + 1}')
+                
+                # Dosya adını oluştur (Türkçe karaktersiz)
+                output_filename = create_pdf_filename(
+                    st.session_state.pdf_base_name,
+                    i + 1,
+                    section['start_page'],
+                    section['end_page'],
+                    title
+                )
+                
                 metadata = {
-                    "output_filename": Path(section_path).name,
+                    "output_filename": output_filename,
                     "start_page": section['start_page'],
                     "end_page": section['end_page'],
-                    "title": analysis.get('title', f'Bölüm {i + 1}'),
+                    "title": title,
                     "description": analysis.get('description', 'Bu bölüm için açıklama oluşturulamadı.'),
                     "keywords": analysis.get('keywords', f'bölüm_{i + 1}')
                 }
             else:
                 # Fallback for sections with no extractable text
+                output_filename = create_pdf_filename(
+                    st.session_state.pdf_base_name,
+                    i + 1,
+                    section['start_page'],
+                    section['end_page'],
+                    ""
+                )
+                
                 metadata = {
-                    "output_filename": Path(section_path).name,
+                    "output_filename": output_filename,
                     "start_page": section['start_page'],
                     "end_page": section['end_page'],
                     "title": f"Bölüm {i + 1}",
@@ -277,6 +333,9 @@ def process_pdf(pdf_path, api_key, sectioning_mode, min_pages, max_pages):
             progress_bar.progress(int(section_progress))
             status_text.text(f"🤖 Bölüm {i + 1}/{len(sections)} analiz edildi...")
         
+        # Save metadata list to session state
+        st.session_state.metadata_list = metadata_list
+        
         # Step 6: Generate final JSON
         status_text.text("📄 JSON çıktısı oluşturuluyor...")
         progress_bar.progress(95)
@@ -288,20 +347,86 @@ def process_pdf(pdf_path, api_key, sectioning_mode, min_pages, max_pages):
         json_output = json.dumps(final_json, ensure_ascii=False, indent=2)
         st.session_state.json_output = json_output
         
-        # Save JSON to file
-        json_path = Path(output_dir) / "pdf_sections_metadata.json"
-        with open(json_path, 'w', encoding='utf-8') as f:
-            f.write(json_output)
-        
         # Complete
         progress_bar.progress(100)
-        status_text.text("✅ İşlem tamamlandı!")
-        st.session_state.processing_complete = True
+        status_text.text("✅ Analiz tamamlandı!")
+        st.session_state.analysis_complete = True
         
-        st.success(f"🎉 İşlem başarıyla tamamlandı! {len(sections)} bölüm oluşturuldu.")
+        st.success(f"🎉 Analiz başarıyla tamamlandı! {len(sections)} bölüm için metadata oluşturuldu.")
+        st.info("👇 Aşağıda JSON çıktısını inceleyebilir ve PDF'leri parçalayabilirsiniz.")
         
     except Exception as e:
         st.error(f"❌ İşlem sırasında hata oluştu: {str(e)}")
+        st.exception(e)
+
+def split_pdf_files():
+    """Split PDF files according to prepared metadata"""
+    try:
+        # Create progress bar
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # Get data from session state
+        pdf_path = st.session_state.pdf_path_temp
+        metadata_list = st.session_state.metadata_list
+        sections = st.session_state.sections
+        
+        # Step 1: Create output directories
+        status_text.text("📁 Çıktı klasörleri oluşturuluyor...")
+        progress_bar.progress(10)
+        
+        output_dir = create_output_directories()
+        st.session_state.output_dir = output_dir
+        
+        # Step 2: Split PDF files
+        status_text.text("✂️ PDF dosyaları parçalanıyor...")
+        progress_bar.progress(30)
+        
+        processor = PDFProcessor()
+        
+        for i, (section, metadata) in enumerate(zip(sections, metadata_list)):
+            # Create section PDF with the specified filename
+            output_path = Path(output_dir) / metadata['output_filename']
+            
+            # Create PDF using processor
+            with open(pdf_path, 'rb') as source_file:
+                import pypdf
+                reader = pypdf.PdfReader(source_file)
+                writer = pypdf.PdfWriter()
+                
+                # Add pages to writer
+                for page_num in range(section['start_page'] - 1, section['end_page']):
+                    if page_num < len(reader.pages):
+                        writer.add_page(reader.pages[page_num])
+                
+                # Save PDF
+                with open(output_path, 'wb') as output_file:
+                    writer.write(output_file)
+            
+            # Update progress
+            file_progress = 30 + (i + 1) / len(sections) * 60
+            progress_bar.progress(int(file_progress))
+            status_text.text(f"✂️ Bölüm {i + 1}/{len(sections)} oluşturuldu...")
+        
+        # Step 3: Save JSON to file
+        status_text.text("💾 JSON dosyası kaydediliyor...")
+        progress_bar.progress(95)
+        
+        json_path = Path(output_dir) / "pdf_sections_metadata.json"
+        with open(json_path, 'w', encoding='utf-8') as f:
+            f.write(st.session_state.json_output)
+        
+        # Complete
+        progress_bar.progress(100)
+        status_text.text("✅ PDF parçalama tamamlandı!")
+        st.session_state.processing_complete = True
+        st.session_state.analysis_complete = False  # Analiz bölümünü gizle
+        
+        st.success(f"🎉 {len(sections)} PDF dosyası başarıyla oluşturuldu!")
+        st.balloons()
+        
+    except Exception as e:
+        st.error(f"❌ PDF parçalama sırasında hata oluştu: {str(e)}")
         st.exception(e)
 
 def reset_and_cleanup():
@@ -318,6 +443,11 @@ def reset_and_cleanup():
     st.session_state.processing_complete = False
     st.session_state.json_output = ""
     st.session_state.output_dir = ""
+    st.session_state.sections = []
+    st.session_state.analysis_complete = False
+    st.session_state.pdf_path_temp = ""
+    st.session_state.pdf_base_name = ""
+    st.session_state.metadata_list = []
 
 if __name__ == "__main__":
     main()
