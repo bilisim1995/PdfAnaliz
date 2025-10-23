@@ -4,7 +4,18 @@
 
 This is a Streamlit-based web application that processes PDF documents and segments them into optimized chunks for RAG (Retrieval Augmented Generation) systems. The application offers two sectioning strategies: AI-powered intelligent sectioning that analyzes content to create semantically meaningful sections, and manual sectioning based on fixed page ranges. Using DeepSeek AI, it generates comprehensive metadata including titles, descriptions, and keywords for each section. Users can upload PDFs from their computer or download them from URLs, and the system automatically creates document sections with AI-generated metadata to improve retrieval performance in RAG applications.
 
-## Recent Changes (October 22, 2025)
+## Recent Changes (October 23, 2025)
+
+- Implemented **Two-Phase Workflow**: Separated PDF processing into analysis (JSON preview) and splitting (actual file creation) phases
+  - Phase 1: Analyze PDF and generate metadata with JSON preview
+  - Phase 2: User confirms and splits PDFs based on prepared metadata
+- Added **Turkish Character Transliteration**: PDF filenames automatically convert Turkish characters (ç, ğ, ı, ö, ş, ü) to English equivalents (c, g, i, o, s, u)
+- Enhanced **Filename Generation**: Intelligent filenames from AI-generated titles or original PDF names with section numbers and page ranges
+- Improved **URL Download Reliability**: Added retry logic with exponential backoff for network resilience
+- **Security Enhancement**: Removed hardcoded API key, now requires environment variable or user input
+- **State Management**: Proper session state reset for multiple PDF processing without manual restart
+
+## Previous Changes (October 22, 2025)
 
 - Added **Intelligent Content-Based Sectioning**: AI analyzes PDF content to create semantically coherent sections based on topic changes and content flow
 - Implemented **Dual Sectioning Strategies**: Users can choose between AI-powered intelligent sectioning or manual fixed-page sectioning
@@ -56,22 +67,32 @@ Preferred communication style: Simple, everyday language.
    - Provides reasoning for each suggested section boundary
 
 3. **Utils** (`utils.py`)
-   - PDF download functionality from URLs with validation
+   - PDF download functionality from URLs with retry logic and validation
    - Content-type verification and PDF magic number checking
    - Temporary file management with unique UUID-based naming
-   - HTTP request handling with proper headers and timeout configurations
+   - HTTP request handling with proper headers, timeouts, and exponential backoff
+   - **Turkish Character Transliteration**: `transliterate_turkish()` converts Turkish chars to English
+   - **Intelligent Filename Generation**: `create_pdf_filename()` creates sanitized, English-compatible PDF filenames
 
 ### Data Processing Flow
 
-**Decision**: Sequential processing pipeline  
-**Rationale**: Ensures data integrity and allows for error handling at each stage.
+**Decision**: Two-phase sequential processing pipeline  
+**Rationale**: Ensures data integrity, allows for error handling at each stage, and gives users preview/confirmation before file creation.
 
-**Pipeline Stages**:
+**Phase 1 - Analysis and Preview**:
 1. PDF acquisition (upload or URL download)
 2. Structure analysis (page count, text extraction)
-3. Section creation based on page ranges
+3. Section creation based on page ranges or AI content analysis
 4. AI-powered metadata generation per section
 5. JSON output generation with structured metadata
+6. Preview JSON output to user
+
+**Phase 2 - PDF Splitting**:
+1. User confirms metadata from preview
+2. Create output directories
+3. Split PDF files according to prepared metadata
+4. Generate filenames with Turkish character transliteration
+5. Save JSON metadata file alongside PDF sections
 
 ### AI Integration
 
@@ -128,5 +149,5 @@ Preferred communication style: Simple, everyday language.
 
 ### Configuration
 - Environment variable support for `DEEPSEEK_API_KEY`
-- Hardcoded fallback API key for development convenience
+- API key required via environment variable (no hardcoded fallback for security)
 - Configurable section parameters (min/max pages per section)
