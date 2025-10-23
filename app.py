@@ -30,8 +30,35 @@ def main():
     if 'metadata_list' not in st.session_state:
         st.session_state.metadata_list = []
     
-    # Sidebar for configuration
+    # Login session state
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'access_token' not in st.session_state:
+        st.session_state.access_token = ""
+    if 'refresh_token' not in st.session_state:
+        st.session_state.refresh_token = ""
+    if 'user_info' not in st.session_state:
+        st.session_state.user_info = {}
+    if 'api_base_url' not in st.session_state:
+        st.session_state.api_base_url = ""
+    
+    # Check login status
+    if not st.session_state.logged_in:
+        show_login_page()
+        return
+    
+    # Sidebar for logged-in users
     st.sidebar.header("⚙️ Ayarlar")
+    
+    # Show user info
+    if st.session_state.user_info:
+        st.sidebar.success(f"👤 Giriş yapıldı: {st.session_state.user_info.get('email', 'Kullanıcı')}")
+        st.sidebar.caption(f"Rol: {st.session_state.user_info.get('role', 'N/A')}")
+    
+    # Logout button
+    if st.sidebar.button("🚪 Çıkış Yap", type="secondary", use_container_width=True):
+        logout()
+        st.rerun()
     
     # DeepSeek API Key
     api_key = os.getenv("DEEPSEEK_API_KEY", "")
@@ -39,18 +66,6 @@ def main():
     # API Upload Configuration
     st.sidebar.divider()
     st.sidebar.subheader("📤 Veri Yükleme Ayarları")
-    
-    api_url = st.sidebar.text_input(
-        "API URL:",
-        value="https://api.example.com",
-        help="Bulk upload endpoint URL'i (örn: https://api.example.com/api/admin/documents/bulk-upload)"
-    )
-    
-    api_token = st.sidebar.text_input(
-        "Authorization Token:",
-        type="password",
-        help="Bearer token (örn: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...)"
-    )
     
     category = st.sidebar.text_input(
         "Kategori:",
@@ -225,10 +240,10 @@ def main():
         st.subheader("📤 Verileri API'ye Yükle")
         
         # Validate API configuration
-        upload_ready = all([api_url, api_token, category, institution, belge_adi])
+        upload_ready = all([category, institution, belge_adi])
         
         if not upload_ready:
-            st.warning("⚠️ Veri yüklemek için lütfen sol taraftaki tüm API ayarlarını doldurun (API URL, Token, Kategori, Kurum, Belge Adı)")
+            st.warning("⚠️ Veri yüklemek için lütfen sol taraftaki tüm API ayarlarını doldurun (Kategori, Kurum, Belge Adı)")
         
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
@@ -239,7 +254,7 @@ def main():
                 disabled=not upload_ready,
                 help="Bölümlenmiş PDF'leri ve metadata'yı API'ye yükler"
             ):
-                upload_to_api(api_url, api_token, category, institution, belge_adi)
+                upload_to_api(category, institution, belge_adi)
         
         # Reset button
         st.divider()
@@ -500,10 +515,18 @@ def split_pdf_files():
         st.error(f"❌ PDF parçalama sırasında hata oluştu: {str(e)}")
         st.exception(e)
 
-def upload_to_api(api_url, api_token, category, institution, belge_adi):
+def upload_to_api(category, institution, belge_adi):
     """Upload split PDFs and metadata to API endpoint"""
     try:
         import requests
+        
+        # Get API credentials from session state
+        api_base_url = st.session_state.api_base_url
+        access_token = st.session_state.access_token
+        
+        if not api_base_url or not access_token:
+            st.error("❌ API bilgileri bulunamadı. Lütfen tekrar giriş yapın.")
+            return
         
         with st.spinner("📤 Veriler API'ye yükleniyor..."):
             # Prepare metadata in the required format
@@ -548,13 +571,16 @@ def upload_to_api(api_url, api_token, category, institution, belge_adi):
             
             # Prepare headers
             headers = {
-                'Authorization': f'Bearer {api_token}'
+                'Authorization': f'Bearer {access_token}'
             }
+            
+            # Prepare API URL
+            upload_url = f"{api_base_url.rstrip('/')}/api/admin/documents/bulk-upload"
             
             # Make API request
             try:
                 response = requests.post(
-                    api_url,
+                    upload_url,
                     headers=headers,
                     data=form_data,
                     files=files_to_upload,
@@ -601,6 +627,112 @@ def upload_to_api(api_url, api_token, category, institution, belge_adi):
     except Exception as e:
         st.error(f"❌ Veri yükleme hatası: {str(e)}")
         st.exception(e)
+
+def show_login_page():
+    """Display login page"""
+    st.header("🔐 Giriş Yap")
+    st.markdown("PDF bölümlendirme aracını kullanmak için lütfen giriş yapın.")
+    
+    # Center the login form
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        with st.form("login_form"):
+            api_base_url = st.text_input(
+                "API Base URL:",
+                value="https://api.example.com",
+                help="API'nin temel adresi (örn: https://api.mevzuatgpt.org)",
+                placeholder="https://api.mevzuatgpt.org"
+            )
+            
+            email = st.text_input(
+                "E-posta:",
+                placeholder="admin@mevzuatgpt.org",
+                help="Admin kullanıcı e-posta adresi"
+            )
+            
+            password = st.text_input(
+                "Şifre:",
+                type="password",
+                help="Kullanıcı şifresi"
+            )
+            
+            submit = st.form_submit_button("🔓 Giriş Yap", type="primary", use_container_width=True)
+            
+            if submit:
+                if not api_base_url or not email or not password:
+                    st.error("❌ Lütfen tüm alanları doldurun!")
+                else:
+                    login(api_base_url, email, password)
+
+def login(api_base_url, email, password):
+    """Login to API and get access token"""
+    import requests
+    
+    with st.spinner("🔄 Giriş yapılıyor..."):
+        try:
+            # Prepare login endpoint
+            login_url = f"{api_base_url.rstrip('/')}/api/auth/login"
+            
+            # Prepare request body
+            login_data = {
+                "email": email,
+                "password": password
+            }
+            
+            # Make login request
+            response = requests.post(
+                login_url,
+                headers={"Content-Type": "application/json"},
+                json=login_data,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                # Save to session state
+                st.session_state.logged_in = True
+                st.session_state.access_token = result.get("access_token", "")
+                st.session_state.refresh_token = result.get("refresh_token", "")
+                st.session_state.user_info = result.get("user", {})
+                st.session_state.api_base_url = api_base_url
+                
+                st.success("✅ Giriş başarılı!")
+                st.balloons()
+                st.rerun()
+                
+            elif response.status_code == 401:
+                st.error("❌ Geçersiz e-posta veya şifre!")
+            elif response.status_code == 403:
+                error_data = response.json()
+                st.error(f"❌ {error_data.get('message', 'Yetkiniz bulunmuyor!')}")
+            else:
+                st.error(f"❌ Giriş hatası: {response.status_code}")
+                st.code(response.text, language="json")
+                
+        except requests.exceptions.RequestException as e:
+            st.error(f"❌ Bağlantı hatası: {str(e)}")
+        except Exception as e:
+            st.error(f"❌ Giriş sırasında hata oluştu: {str(e)}")
+
+def logout():
+    """Logout and clear session"""
+    st.session_state.logged_in = False
+    st.session_state.access_token = ""
+    st.session_state.refresh_token = ""
+    st.session_state.user_info = {}
+    st.session_state.api_base_url = ""
+    
+    # Also clear processing data
+    st.session_state.processing_complete = False
+    st.session_state.json_output = ""
+    st.session_state.output_dir = ""
+    st.session_state.sections = []
+    st.session_state.analysis_complete = False
+    st.session_state.pdf_path_temp = ""
+    st.session_state.pdf_base_name = ""
+    st.session_state.metadata_list = []
 
 def reset_and_cleanup():
     """Reset all session state and clean up files"""

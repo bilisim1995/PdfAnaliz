@@ -1,0 +1,163 @@
+Login endpoint'inin request ve response formatını inceleyeyim:
+
+
+[2 tools called]
+
+## 🔐 **Login Endpoint Request ve Response Formatı**
+
+### 🔗 **Endpoint**
+```
+POST /api/auth/login
+```
+
+### 📤 **İstek Formatı (Request)**
+
+#### **Headers**
+```http
+Content-Type: application/json
+```
+
+#### **Request Body**
+```json
+{
+  "email": "admin@mevzuatgpt.org",
+  "password": "your_password",
+  "turnstileToken": "0.abc123def456..." // Opsiyonel - Cloudflare Turnstile token
+}
+```
+
+#### **Request Interface (TypeScript)**
+```typescript
+interface LoginCredentials {
+  email: string;
+  password: string;
+  turnstileToken?: string; // Opsiyonel
+}
+```
+
+### 📥 **Cevap Formatı (Response)**
+
+#### **Başarılı Giriş (200 OK)**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "user": {
+    "id": "user_123",
+    "email": "admin@mevzuatgpt.org",
+    "role": "admin"
+  }
+}
+```
+
+#### **Response Interface (TypeScript)**
+```typescript
+interface LoginResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+  user: {
+    id: string;
+    email: string;
+    role: string;
+  };
+}
+```
+
+### ❌ **Hata Cevabı (400/401/403)**
+
+#### **Geçersiz Kimlik Bilgileri (401)**
+```json
+{
+  "message": "Geçersiz giriş bilgileri"
+}
+```
+
+#### **Yetkisiz Rol (403)**
+```json
+{
+  "message": "Bu panele erişim yetkiniz bulunmamaktadır. Sadece admin kullanıcıları giriş yapabilir."
+}
+```
+
+#### **Eksik Alanlar (400)**
+```json
+{
+  "message": "E-posta ve şifre alanları zorunludur"
+}
+```
+
+#### **Turnstile Hatası (400)**
+```json
+{
+  "message": "Güvenlik doğrulaması başarısız"
+}
+```
+
+### 🔒 **Güvenlik Özellikleri**
+
+#### **Cloudflare Turnstile**
+- Login formunda CAPTCHA benzeri güvenlik doğrulaması
+- `turnstileToken` alanı opsiyonel ama önerilen
+- Token süresi dolduğunda yeniden doğrulama gerekli
+
+#### **Admin Rol Kontrolü**
+- Sadece `role: "admin"` olan kullanıcılar giriş yapabilir
+- Diğer roller için `UNAUTHORIZED_ROLE` hatası döner
+
+#### **Token Yönetimi**
+- `access_token`: API çağrıları için (1 saat geçerli)
+- `refresh_token`: Token yenileme için
+- Otomatik olarak localStorage'a kaydedilir
+
+### 📝 **Örnek Kullanım (JavaScript)**
+
+```javascript
+const loginData = {
+  email: "admin@mevzuatgpt.org",
+  password: "your_password",
+  turnstileToken: "0.abc123def456..." // Opsiyonel
+};
+
+const response = await fetch('/api/auth/login', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify(loginData)
+});
+
+if (response.ok) {
+  const data = await response.json();
+  
+  // Token'ları sakla
+  localStorage.setItem('access_token', data.access_token);
+  localStorage.setItem('refresh_token', data.refresh_token);
+  localStorage.setItem('user', JSON.stringify(data.user));
+  
+  console.log('Giriş başarılı:', data.user);
+} else {
+  const error = await response.json();
+  console.error('Giriş hatası:', error.message);
+}
+```
+
+### ⚠️ **Hata Durumları**
+
+- **400**: Geçersiz request formatı veya Turnstile hatası
+- **401**: Geçersiz email/şifre kombinasyonu
+- **403**: Admin olmayan kullanıcı giriş denemesi
+- **429**: Çok fazla giriş denemesi (rate limiting)
+- **500**: Sunucu hatası
+
+### 🔄 **Token Kullanımı**
+
+Giriş sonrası diğer API çağrılarında:
+```http
+Authorization: Bearer {access_token}
+```
+
+Bu endpoint ile admin paneli girişi yapılır ve tüm diğer API endpoint'leri için gerekli token alınır.

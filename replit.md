@@ -19,6 +19,12 @@ This is a Streamlit-based web application that processes PDF documents and segme
   - Supports multipart/form-data with files, category, institution, belge_adi, and metadata fields
   - Displays API response with batch_id and upload status
   - Configurable via sidebar settings (API URL, token, category, institution, belge_adi)
+- **Login System**: Added authentication flow with email/password login
+  - Users must login before accessing PDF processing features
+  - API token automatically obtained from login callback response
+  - Session state manages authentication (access_token, refresh_token, user_info)
+  - Login page displays API base URL, email, and password inputs
+  - Logout functionality clears session and returns to login page
 
 ## Previous Changes (October 22, 2025)
 
