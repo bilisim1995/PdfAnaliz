@@ -285,22 +285,20 @@ SADECE BELGE ADI ÇIKTISI VER (JSON veya başka format yok):
             
             suggested_name = response.choices[0].message.content
             if not suggested_name:
-                return "Belge_Adi"
+                return "Belge Adı"
             
             suggested_name = suggested_name.strip()
             
-            # Özel karakterleri temizle
+            # Sadece dosya sistemi için tehlikeli karakterleri temizle
+            # Türkçe karakterler ve boşluklar korunsun
             suggested_name = re.sub(r'[<>:"/\\|?*]', '', suggested_name)
             suggested_name = suggested_name.strip()
             
-            # Boşlukları alt çizgiye çevir
-            suggested_name = re.sub(r'\s+', '_', suggested_name)
-            
             # Çok uzunsa kısalt
-            if len(suggested_name) > 50:
-                suggested_name = suggested_name[:50]
+            if len(suggested_name) > 100:
+                suggested_name = suggested_name[:100]
             
-            return suggested_name if suggested_name else "Belge_Adi"
+            return suggested_name if suggested_name else "Belge Adı"
             
         except Exception as e:
             print(f"Belge adı önerisi hatası: {str(e)}")
