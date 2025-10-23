@@ -118,7 +118,7 @@ def main():
                 st.warning("⚠️ Akıllı bölümleme için DeepSeek API anahtarı gereklidir. Lütfen önce API anahtarınızı girin.")
         
         # Process PDF button
-        if st.button("🚀 PDF'i Analiz Et ve Bölümle", type="primary"):
+        if st.button("🔍 PDF'i Analiz Et (1. Adım)", type="primary"):
             if sectioning_mode == "📏 Manuel Bölümleme (sabit sayfa aralığı)" and min_pages_per_section >= max_pages_per_section:
                 st.error("❌ Minimum sayfa sayısı, maximum sayfa sayısından küçük olmalıdır!")
             else:
@@ -132,25 +132,31 @@ def main():
     
     # Analysis results section
     if st.session_state.analysis_complete and not st.session_state.processing_complete:
-        st.header("2️⃣ Analiz Sonuçları ve JSON Önizleme")
+        st.header("✅ Analiz Tamamlandı!")
+        st.success("PDF başarıyla analiz edildi. Aşağıda oluşturulacak bölümlerin JSON önizlemesini görebilirsiniz.")
         
         # Display JSON output
-        st.subheader("📊 Oluşturulacak Bölümler (JSON)")
+        st.subheader("📊 JSON Önizleme - Oluşturulacak Bölümler")
         st.text_area(
             "JSON Çıktısı:",
             value=st.session_state.json_output,
             height=400,
-            help="PDF parçalandığında bu yapıda bölümler oluşturulacak"
+            help="PDF parçalandığında bu yapıda bölümler oluşturulacak",
+            key="json_preview"
         )
         
-        # Split PDF button
+        # Split PDF button - make it more prominent
         st.divider()
-        col1, col2, col3 = st.columns([2, 2, 1])
+        st.info("👇 JSON'u inceledikten sonra, PDF'leri bölmek için aşağıdaki butona tıklayın:")
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("📄 PDF'leri Parçala ve Kaydet", type="primary", help="JSON'a göre PDF'leri bölümlere ayırıp kaydeder"):
+            if st.button("✂️ PDF'leri Şimdi Böl (2. Adım)", type="primary", use_container_width=True, help="JSON'daki sayfa aralıklarına göre PDF'leri hızlıca böler ve kaydeder"):
                 split_pdf_files()
-        with col3:
-            if st.button("🔄 Yeniden Başla", help="Analizi iptal et ve başa dön"):
+        
+        col4, col5 = st.columns([4, 1])
+        with col5:
+            if st.button("🔄 İptal", help="Analizi iptal et ve başa dön"):
                 reset_and_cleanup()
                 st.rerun()
     
