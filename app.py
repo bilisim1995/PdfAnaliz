@@ -8,6 +8,7 @@ import requests
 from pdf_processor import PDFProcessor
 from deepseek_analyzer import DeepSeekAnalyzer
 from utils import download_pdf_from_url, create_output_directories, create_pdf_filename
+from sgk_scraper_core import scrape_sgk_mevzuat, print_results_to_console
 
 def load_config():
     """Load configuration from config.json"""
@@ -359,6 +360,17 @@ def main():
             if st.button("🗑️ Verileri Sıfırla", type="secondary", help="Tüm işlemi sıfırlar, dosyaları siler ve uygulamayı yeniden başlatır"):
                 reset_and_cleanup()
                 st.rerun()
+    
+    # SGK TARA butonu - sayfanın en altına
+    st.divider()
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🔍 SGK TARA", type="primary", use_container_width=True, help="SGK mevzuatını taramak için tıklayın. Sonuçlar konsola yazdırılacak."):
+            st.info("🔄 SGK tarama başlatılıyor... Sonuçlar konsola yazdırılacak.")
+            all_sections, stats = scrape_sgk_mevzuat()
+            print_results_to_console(all_sections, stats)
+            st.success("✅ Tarama tamamlandı! Sonuçları konsolda görebilirsiniz.")
 
 def analyze_and_prepare(pdf_path, api_key, sectioning_mode, min_pages, max_pages):
     """Analyze PDF and prepare metadata without splitting files"""

@@ -1,5 +1,6 @@
 {
   "api_base_url": "https://d918281c-1bd6-402c-9393-c4aff6ab45cd-00-24vj3sc6uk3ba.worf.replit.dev",
   "admin_email": "admin@mevzuatgpt.com",
-  "admin_password": "TestAdmin123!"
+  "admin_password": "TestAdmin123!",
+  "deepseek_api_key": "sk-8c15dc40c6b44cde9880f7a47b4be333"
 }
