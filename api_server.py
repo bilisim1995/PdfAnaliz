@@ -120,12 +120,28 @@ class ScrapeResponse(BaseModel):
     data: Dict[str, Any] = {}
 
 
+class PortalScanRequest(BaseModel):
+    id: str = Field(..., description="Kurum MongoDB ObjectId (kurumlar.json'dan)")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "id": "68bbf6df8ef4e8023c19641d"
+            }
+        }
+    }
+
+
 class ProcessRequest(BaseModel):
+    kurum_id: str = Field(..., description="Kurum MongoDB ObjectId (kurumlar.json'dan)")
     id: int = Field(..., description="Scrape sonucundaki item id")
 
     model_config = {
         "json_schema_extra": {
-            "example": {"id": 1}
+            "example": {
+                "kurum_id": "68bbf6df8ef4e8023c19641d",
+                "id": 1
+            }
         }
     }
 
@@ -152,20 +168,60 @@ async def root():
         "message": "SGK Scraper API",
         "version": "1.0.0",
         "endpoints": {
-            "POST /api/sgk/scrape": "SGK mevzuatlarını tarar ve konsola yazdırır"
+            "POST /api/mevzuatgpt/scrape": "Kurum mevzuatlarını tarar ve konsola yazdırır"
         }
     }
 
 
-@app.post("/api/sgk/scrape", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="SGK tarama")
-async def scrape_sgk():
+@app.post("/api/mevzuatgpt/scrape", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="Kurum mevzuat tarama")
+async def scrape_mevzuatgpt(req: PortalScanRequest):
     """
-    SGK mevzuatlarını tarar ve sonuçları konsola yazdırır
+    Belirtilen kurumun mevzuatlarını tarar ve sonuçları konsola yazdırır.
+    Kurum bilgisi kurumlar.json dosyasından alınır.
     """
     try:
         print("\n" + "="*80)
-        print("🚀 API Endpoint'ten SGK Tarama İsteği Alındı")
+        print(f"🚀 API Endpoint'ten Kurum Mevzuat Tarama İsteği Alındı (Kurum ID: {req.id})")
         print("="*80)
+        
+        # kurumlar.json'dan kurum bilgisini çek
+        kurum_url = None
+        kurum_adi = None
+        try:
+            with open('kurumlar.json', 'r', encoding='utf-8') as f:
+                kurumlar_data = json.load(f)
+                kurumlar_list = kurumlar_data.get('kurumlar', [])
+                for kurum in kurumlar_list:
+                    if kurum.get('id') == req.id:
+                        kurum_url = kurum.get('url')
+                        kurum_adi = kurum.get('kurum_adi', 'Bilinmeyen Kurum')
+                        break
+                
+                if not kurum_url:
+                    return ScrapeResponse(
+                        success=False,
+                        message=f"Kurum ID '{req.id}' kurumlar.json dosyasında bulunamadı",
+                        data={
+                            "error": "KURUM_NOT_FOUND",
+                            "kurum_id": req.id,
+                            "available_kurumlar": [{"id": k.get('id'), "kurum_adi": k.get('kurum_adi')} for k in kurumlar_list]
+                        }
+                    )
+        except FileNotFoundError:
+            return ScrapeResponse(
+                success=False,
+                message="kurumlar.json dosyası bulunamadı",
+                data={"error": "FILE_NOT_FOUND"}
+            )
+        except json.JSONDecodeError as e:
+            return ScrapeResponse(
+                success=False,
+                message=f"kurumlar.json dosyası geçersiz JSON formatında: {str(e)}",
+                data={"error": "INVALID_JSON", "details": str(e)}
+            )
+        
+        print(f"📋 Kurum: {kurum_adi}")
+        print(f"🔗 URL: {kurum_url}")
         
         # Önce API'den yüklü documents'ları çek (çerez kullanmadan, direkt API)
         uploaded_title_set = set()
@@ -181,8 +237,8 @@ async def scrape_sgk():
                     uploaded_docs = get_uploaded_documents(api_base_url, token, use_streamlit=False)
                     for doc in uploaded_docs:
                         val = doc.get("belge_adi", "")
-                        if val:
-                            uploaded_title_set.add(to_title(val))
+                    if val:
+                        uploaded_title_set.add(to_title(val))
                     print(f"✅ {len(uploaded_docs)} document'tan {len(uploaded_title_set)} benzersiz belge_adi bulundu")
                 except Exception as e:
                     print(f"⚠️ Documents çekme hatası: {str(e)}")
@@ -208,8 +264,8 @@ async def scrape_sgk():
         except Exception as e:
             print(f"⚠️ MongoDB portal listesi okunamadı: {str(e)}")
         
-        # Scraping işlemini başlat
-        all_sections, stats = scrape_sgk_mevzuat()
+        # Scraping işlemini başlat (URL parametresi ile)
+        all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
         
         # Sonuçları konsola yazdır
         print_results_to_console(all_sections, stats)
@@ -291,7 +347,7 @@ async def scrape_sgk():
         
         return ScrapeResponse(
             success=True,
-            message="SGK tarama işlemi başarıyla tamamlandı. Sonuçlar konsola yazdırıldı.",
+            message=f"{kurum_adi} tarama işlemi başarıyla tamamlandı. Sonuçlar konsola yazdırıldı.",
             data=response_data
         )
         
@@ -305,16 +361,57 @@ async def scrape_sgk():
         )
 
 
-@app.post("/api/sgk/portal-scan", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="SGK portal tarama (sadece MongoDB kontrolü)")
-async def scrape_sgk_portal():
+@app.post("/api/kurum/portal-scan", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="Kurum portal tarama (MongoDB kontrolü)")
+async def scrape_kurum_portal(req: PortalScanRequest):
     """
-    SGK mevzuatlarını tarar ve sadece MongoDB metadata koleksiyonundaki kayıtlarla karşılaştırır.
+    Belirtilen kurumun mevzuatlarını tarar ve MongoDB metadata koleksiyonundaki kayıtlarla karşılaştırır.
     Portal durumunu (true/false) döner.
+    
+    Kurum bilgisi kurumlar.json dosyasından alınır.
     """
     try:
         print("\n" + "="*80)
-        print("🚀 API Endpoint'ten SGK Portal Tarama İsteği Alındı")
+        print(f"🚀 API Endpoint'ten Kurum Portal Tarama İsteği Alındı (Kurum ID: {req.id})")
         print("="*80)
+        
+        # kurumlar.json'dan kurum bilgisini çek
+        kurum_url = None
+        kurum_adi = None
+        try:
+            with open('kurumlar.json', 'r', encoding='utf-8') as f:
+                kurumlar_data = json.load(f)
+                kurumlar_list = kurumlar_data.get('kurumlar', [])
+                for kurum in kurumlar_list:
+                    if kurum.get('id') == req.id:
+                        kurum_url = kurum.get('url')
+                        kurum_adi = kurum.get('kurum_adi', 'Bilinmeyen Kurum')
+                        break
+                
+                if not kurum_url:
+                    return ScrapeResponse(
+                        success=False,
+                        message=f"Kurum ID '{req.id}' kurumlar.json dosyasında bulunamadı",
+                        data={
+                            "error": "KURUM_NOT_FOUND",
+                            "kurum_id": req.id,
+                            "available_kurumlar": [{"id": k.get('id'), "kurum_adi": k.get('kurum_adi')} for k in kurumlar_list]
+                        }
+                    )
+        except FileNotFoundError:
+            return ScrapeResponse(
+                success=False,
+                message="kurumlar.json dosyası bulunamadı",
+                data={"error": "FILE_NOT_FOUND"}
+            )
+        except json.JSONDecodeError as e:
+            return ScrapeResponse(
+                success=False,
+                message=f"kurumlar.json dosyası geçersiz JSON formatında: {str(e)}",
+                data={"error": "INVALID_JSON", "details": str(e)}
+            )
+        
+        print(f"📋 Kurum: {kurum_adi}")
+        print(f"🔗 URL: {kurum_url}")
         
         # MongoDB'den portal'da bulunan pdf_adi'ları çek
         portal_title_set = set()
@@ -338,8 +435,8 @@ async def scrape_sgk_portal():
         except Exception as e:
             print(f"⚠️ MongoDB portal listesi okunamadı: {str(e)}")
         
-        # Scraping işlemini başlat
-        all_sections, stats = scrape_sgk_mevzuat()
+        # Scraping işlemini başlat (URL parametresi ile)
+        all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
         
         # Sonuçları konsola yazdır
         print_results_to_console(all_sections, stats)
@@ -418,7 +515,7 @@ async def scrape_sgk_portal():
         
         return ScrapeResponse(
             success=True,
-            message="SGK portal tarama işlemi başarıyla tamamlandı. Sonuçlar konsola yazdırıldı.",
+            message=f"{kurum_adi} portal tarama işlemi başarıyla tamamlandı. Sonuçlar konsola yazdırıldı.",
             data=response_data
         )
         
@@ -1876,12 +1973,41 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
         return {"error": str(e)}
 
 
-@app.post("/api/sgk/process", response_model=ProcessResponse, tags=["SGK Scraper"], summary="Scrape item ID ile PDF indir, analiz et ve yükle")
+@app.post("/api/kurum/process", response_model=ProcessResponse, tags=["SGK Scraper"], summary="Kurum item ID ile PDF indir, analiz et ve yükle")
 async def process_item(req: ProcessRequest):
     try:
+        # kurumlar.json'dan kurum bilgisini çek
+        kurum_url = None
+        kurum_adi = None
+        try:
+            with open('kurumlar.json', 'r', encoding='utf-8') as f:
+                kurumlar_data = json.load(f)
+                kurumlar_list = kurumlar_data.get('kurumlar', [])
+                for kurum in kurumlar_list:
+                    if kurum.get('id') == req.kurum_id:
+                        kurum_url = kurum.get('url')
+                        kurum_adi = kurum.get('kurum_adi', 'Bilinmeyen Kurum')
+                        break
+                
+                if not kurum_url:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Kurum ID '{req.kurum_id}' kurumlar.json dosyasında bulunamadı"
+                    )
+        except FileNotFoundError:
+            raise HTTPException(status_code=500, detail="kurumlar.json dosyası bulunamadı")
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"kurumlar.json dosyası geçersiz JSON formatında: {str(e)}"
+            )
+        
+        print(f"📋 Kurum: {kurum_adi}")
+        print(f"🔗 URL: {kurum_url}")
+        
         # Önce otomatik olarak scrape yap (önbellek yoksa veya her zaman)
         print("\n" + "="*80)
-        print("🔄 /api/sgk/process: Önce otomatik scrape yapılıyor...")
+        print(f"🔄 /api/kurum/process: Önce otomatik scrape yapılıyor (Kurum: {kurum_adi})...")
         print("="*80)
         
         # Önce API'den yüklü documents'ları çek (çerez kullanmadan, direkt API)
@@ -1902,8 +2028,8 @@ async def process_item(req: ProcessRequest):
                 except Exception as e:
                     print(f"⚠️ Documents çekme hatası: {str(e)}")
         
-        # Scraping işlemini başlat
-        all_sections, stats = scrape_sgk_mevzuat()
+        # Scraping işlemini başlat (kurum URL'si ile)
+        all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
         
         # Önbelleği güncelle
         global last_item_map
@@ -1929,7 +2055,7 @@ async def process_item(req: ProcessRequest):
             raise HTTPException(status_code=400, detail=f"Geçersiz id: {req.id}. Mevcut id aralığı: 1-{len(last_item_map)}")
 
         category = item.get('section_title', '')
-        institution = "Sosyal Güvenlik Kurumu"
+        institution = kurum_adi  # Kurum adını kullan
         document_name = item.get('baslik', '')
         pdf_url = item.get('link', '')
         if not pdf_url:
@@ -2060,7 +2186,7 @@ async def process_item(req: ProcessRequest):
             print("💾 MongoDB'ye kaydediliyor...")
             mongodb_metadata = {
                 "pdf_adi": pdf_adi,
-                "kurum_id": "68bbf6df8ef4e8023c19641d",
+                "kurum_id": req.kurum_id,  # Request'ten gelen kurum ID'sini kullan
                 "belge_turu": category,
                 "belge_durumu": "Yürürlükte",
                 "belge_yayin_tarihi": upload_date_str,

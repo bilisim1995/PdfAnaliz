@@ -66,14 +66,14 @@ def turkish_sentence_case(text: str) -> str:
     return first_up + rest
 
 
-def scrape_sgk_mevzuat() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def scrape_sgk_mevzuat(url: str = "https://kms.kaysis.gov.tr/Home/Kurum/22620739") -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
-    SGK mevzuatlarını KAYSİS sitesinden tarar ve API ile karşılaştırır
+    KAYSİS sitesinden mevzuatları tarar ve API ile karşılaştırır
+    Args:
+        url: Taranacak kurum URL'i
     Returns: (all_sections, stats)
     """
-    url = "https://kms.kaysis.gov.tr/Home/Kurum/22620739"
-    
-    print(f"🔍 SGK Mevzuat Tarama Başlatılıyor...")
+    print(f"🔍 Mevzuat Tarama Başlatılıyor...")
     print(f"📡 Site: {url}")
     
     # Config'den bilgileri yükle
