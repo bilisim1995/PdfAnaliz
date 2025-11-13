@@ -7,8 +7,119 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional, List
 import uvicorn
-from sgk_scraper_core import scrape_sgk_mevzuat, print_results_to_console, turkish_sentence_case
-from sgk_scraper import get_uploaded_documents
+from scrapers.sgk_kaysis_scraper import (
+    scrape_sgk_mevzuat,
+    print_results_to_console as print_sgk_results,
+    get_uploaded_documents
+)
+from scrapers.adalet_bakanligi_scraper import (
+    scrape_adalet_bakanligi_mevzuat,
+    print_results_to_console as print_adalet_results
+)
+from scrapers.aile_sosyal_hizmetler_scraper import (
+    scrape_aile_sosyal_hizmetler_mevzuat,
+    print_results_to_console as print_aile_sosyal_results
+)
+from scrapers.calisma_sosyal_guvenlik_scraper import (
+    scrape_calisma_sosyal_guvenlik_mevzuat,
+    print_results_to_console as print_calisma_sosyal_results
+)
+from scrapers.cevre_sehircilik_iklim_scraper import (
+    scrape_cevre_sehircilik_iklim_mevzuat,
+    print_results_to_console as print_cevre_sehircilik_results
+)
+from scrapers.turkiye_is_kurumu_scraper import (
+    scrape_turkiye_is_kurumu_mevzuat,
+    print_results_to_console as print_turkiye_is_kurumu_results
+)
+from scrapers.adli_tip_kurumu_scraper import (
+    scrape_adli_tip_kurumu_mevzuat,
+    print_results_to_console as print_adli_tip_kurumu_results
+)
+from scrapers.ahiler_kalkinma_ajansi_scraper import (
+    scrape_ahiler_kalkinma_ajansi_mevzuat,
+    print_results_to_console as print_ahiler_kalkinma_results
+)
+from scrapers.afet_acil_durum_scraper import (
+    scrape_afet_acil_durum_mevzuat,
+    print_results_to_console as print_afet_acil_durum_results
+)
+from scrapers.ant_baskanligi_scraper import (
+    scrape_ant_baskanligi_mevzuat,
+    print_results_to_console as print_ant_baskanligi_results
+)
+from scrapers.anayasa_mahkemesi_scraper import (
+    scrape_anayasa_mahkemesi_mevzuat,
+    print_results_to_console as print_anayasa_mahkemesi_results
+)
+from scrapers.ankara_kalkinma_ajansi_scraper import (
+    scrape_ankara_kalkinma_ajansi_mevzuat,
+    print_results_to_console as print_ankara_kalkinma_results
+)
+from scrapers.ataturk_kultur_dil_tarih_scraper import (
+    scrape_ataturk_kultur_dil_tarih_mevzuat,
+    print_results_to_console as print_ataturk_kultur_dil_tarih_results
+)
+from scrapers.ataturk_orman_ciftligi_scraper import (
+    scrape_ataturk_orman_ciftligi_mevzuat,
+    print_results_to_console as print_ataturk_orman_ciftligi_results
+)
+from scrapers.avrupa_birligi_scraper import (
+    scrape_avrupa_birligi_mevzuat,
+    print_results_to_console as print_avrupa_birligi_results
+)
+from scrapers.avrupa_birligi_egitim_genclik_scraper import (
+    scrape_avrupa_birligi_egitim_genclik_mevzuat,
+    print_results_to_console as print_avrupa_birligi_egitim_genclik_results
+)
+from scrapers.bankacilik_duzenleme_denetleme_scraper import (
+    scrape_bankacilik_duzenleme_denetleme_mevzuat,
+    print_results_to_console as print_bankacilik_duzenleme_denetleme_results
+)
+from scrapers.basin_ilan_kurumu_scraper import (
+    scrape_basin_ilan_kurumu_mevzuat,
+    print_results_to_console as print_basin_ilan_kurumu_results
+)
+from scrapers.bati_akdeniz_kalkinma_ajansi_scraper import (
+    scrape_bati_akdeniz_kalkinma_ajansi_mevzuat,
+    print_results_to_console as print_bati_akdeniz_kalkinma_ajansi_results
+)
+from scrapers.bilgi_teknolojileri_iletisim_kurumu_scraper import (
+    scrape_bilgi_teknolojileri_iletisim_kurumu_mevzuat,
+    print_results_to_console as print_bilgi_teknolojileri_iletisim_kurumu_results
+)
+from scrapers.boru_hatlari_petrol_tasima_scraper import (
+    scrape_boru_hatlari_petrol_tasima_mevzuat,
+    print_results_to_console as print_boru_hatlari_petrol_tasima_results
+)
+from scrapers.bursa_eskisehir_bilecik_kalkinma_ajansi_scraper import (
+    scrape_bursa_eskisehir_bilecik_kalkinma_ajansi_mevzuat,
+    print_results_to_console as print_bursa_eskisehir_bilecik_kalkinma_ajansi_results
+)
+from scrapers.cumhurbaskanligi_scraper import (
+    scrape_cumhurbaskanligi_mevzuat,
+    print_results_to_console as print_cumhurbaskanligi_results
+)
+from scrapers.cumhurbaskanligi_yatirim_finans_ofisi_scraper import (
+    scrape_cumhurbaskanligi_yatirim_finans_ofisi_mevzuat,
+    print_results_to_console as print_cumhurbaskanligi_yatirim_finans_ofisi_results
+)
+from scrapers.calisma_sosyal_guvenlik_egitim_arastirma_merkezi_scraper import (
+    scrape_calisma_sosyal_guvenlik_egitim_arastirma_merkezi_mevzuat,
+    print_results_to_console as print_calisma_sosyal_guvenlik_egitim_arastirma_merkezi_results
+)
+from scrapers.canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_scraper import (
+    scrape_canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_mevzuat,
+    print_results_to_console as print_canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_results
+)
+from scrapers.cay_isletmeleri_genel_mudurlugu_scraper import (
+    scrape_cay_isletmeleri_genel_mudurlugu_mevzuat,
+    print_results_to_console as print_cay_isletmeleri_genel_mudurlugu_results
+)
+from scrapers.cukurova_kalkinma_ajansi_scraper import (
+    scrape_cukurova_kalkinma_ajansi_mevzuat,
+    print_results_to_console as print_cukurova_kalkinma_ajansi_results
+)
 import threading
 import re
 import os
@@ -108,10 +219,48 @@ def _get_mongo_collections():
     return client, db[metadata_collection_name], db[content_collection_name]
 
 
-def to_title(s: str) -> str:
+def normalize_for_exact_match(s: str) -> str:
+    """Tam eşleşme için metni normalize eder (Türkçe karakter ve boşluk desteği)"""
     if not s:
         return ""
-    return re.sub(r"\s+", " ", s.strip()).title()
+    import unicodedata
+    # Unicode normalizasyonu
+    s = unicodedata.normalize('NFC', s)
+    s = s.replace("i\u0307", "i")
+    # Türkçe küçük harfe çevirme
+    s = s.replace('I', 'ı').replace('İ', 'i').lower()
+    # Fazla boşlukları temizle ve trim et
+    s = re.sub(r'\s+', ' ', s.strip())
+    return s
+
+
+def to_title(s: str) -> str:
+    """Türkçe karakterleri dikkate alarak Title Case'e çevirir"""
+    if not s:
+        return ""
+    import unicodedata
+    # Unicode normalizasyonu
+    s = unicodedata.normalize('NFC', s)
+    s = s.replace("i\u0307", "i")
+    # Türkçe küçük harfe çevirme
+    tmp = s.replace('I', 'ı').replace('İ', 'i').lower()
+    # Kelime kelime baş harf büyüt
+    words = re.split(r'(\s+)', tmp)
+    titled_parts = []
+    for w in words:
+        if not w or w.isspace():
+            titled_parts.append(w)
+            continue
+        first = w[0]
+        rest = w[1:]
+        if first == 'i':
+            first_up = 'İ'
+        elif first == 'ı':
+            first_up = 'I'
+        else:
+            first_up = first.upper()
+        titled_parts.append(first_up + rest)
+    return ''.join(titled_parts)
 
 
 class ScrapeResponse(BaseModel):
@@ -134,13 +283,19 @@ class PortalScanRequest(BaseModel):
 
 class ProcessRequest(BaseModel):
     kurum_id: str = Field(..., description="Kurum MongoDB ObjectId (kurumlar.json'dan)")
-    id: int = Field(..., description="Scrape sonucundaki item id")
+    link: str = Field(..., description="PDF indirme linki")
+    mode: str = Field(default="t", description="İşlem modu: 'm' (MevzuatGPT), 'p' (Portal), 't' (Tamamı)")
+    category: Optional[str] = Field(default=None, description="Belge kategorisi (opsiyonel)")
+    document_name: Optional[str] = Field(default=None, description="Belge adı (opsiyonel)")
 
     model_config = {
         "json_schema_extra": {
             "example": {
                 "kurum_id": "68bbf6df8ef4e8023c19641d",
-                "id": 1
+                "link": "https://kms.kaysis.gov.tr/Home/Goster/104890",
+                "mode": "t",
+                "category": "Kanunlar",
+                "document_name": "Türkiye cumhuriyeti hükümeti ile tunus cumhuriyeti hükümeti arasında sosyal güvenlik anlaşmasının onaylanmasının uygun bulunduğuna dair kanun"
             }
         }
     }
@@ -224,9 +379,9 @@ async def scrape_mevzuatgpt(req: PortalScanRequest):
         print(f"🔗 URL: {kurum_url}")
         
         # Önce API'den yüklü documents'ları çek (çerez kullanmadan, direkt API)
-        uploaded_title_set = set()
+        uploaded_docs = []
         # MongoDB'den portal'da bulunan pdf_adi'ları çek
-        portal_title_set = set()
+        portal_docs = []
         cfg = _load_config()
         if cfg:
             token = _login_with_config(cfg)
@@ -235,15 +390,15 @@ async def scrape_mevzuatgpt(req: PortalScanRequest):
                 print(f"📡 API'den yüklü documents çekiliyor...")
                 try:
                     uploaded_docs = get_uploaded_documents(api_base_url, token, use_streamlit=False)
-                    for doc in uploaded_docs:
-                        val = doc.get("belge_adi", "")
-                    if val:
-                        uploaded_title_set.add(to_title(val))
-                    print(f"✅ {len(uploaded_docs)} document'tan {len(uploaded_title_set)} benzersiz belge_adi bulundu")
+                    print(f"✅ {len(uploaded_docs)} document bulundu")
+                    # Debug: İlk birkaç belge_adi'yi yazdır
+                    if uploaded_docs:
+                        sample_titles = [doc.get("belge_adi", "") for doc in uploaded_docs[:5]]
+                        print(f"🔍 DEBUG - Örnek belge_adi'ler: {sample_titles}")
                 except Exception as e:
                     print(f"⚠️ Documents çekme hatası: {str(e)}")
 
-        # MongoDB metadata.pdf_adi -> portal_title_set
+        # MongoDB metadata.pdf_adi -> portal_docs
         try:
             client = _get_mongodb_client()
             if client:
@@ -257,18 +412,103 @@ async def scrape_mevzuatgpt(req: PortalScanRequest):
                 for doc in cursor:
                     val = (doc.get("pdf_adi") or "").strip()
                     if val:
-                        portal_title_set.add(to_title(val))
+                        portal_docs.append({"pdf_adi": val})
                         count += 1
                 client.close()
                 print(f"✅ MongoDB'den {count} pdf_adi okundu (portal karşılaştırması için)")
         except Exception as e:
             print(f"⚠️ MongoDB portal listesi okunamadı: {str(e)}")
         
-        # Scraping işlemini başlat (URL parametresi ile)
-        all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
-        
-        # Sonuçları konsola yazdır
-        print_results_to_console(all_sections, stats)
+        # Kurum ID'sine göre doğru scraper'ı seç
+        kurum_id = req.id
+        if kurum_id == "68bbf6df8ef4e8023c19641d":  # SGK
+            all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
+            print_sgk_results(all_sections, stats)
+        elif kurum_id == "68d7c697f087b8dfc4effcdc":  # Adalet Bakanlığı
+            all_sections, stats = scrape_adalet_bakanligi_mevzuat(url=kurum_url)
+            print_adalet_results(all_sections, stats)
+        elif kurum_id == "68d937dd2db1b7f69a79a80d":  # Aile ve Sosyal Hizmetler Bakanlığı
+            all_sections, stats = scrape_aile_sosyal_hizmetler_mevzuat(url=kurum_url)
+            print_aile_sosyal_results(all_sections, stats)
+        elif kurum_id == "68d947492db1b7f69a79a855":  # Çalışma ve Sosyal Güvenlik Bakanlığı
+            all_sections, stats = scrape_calisma_sosyal_guvenlik_mevzuat(url=kurum_url)
+            print_calisma_sosyal_results(all_sections, stats)
+        elif kurum_id == "68d94b822db1b7f69a79a861":  # Çevre, Şehircilik ve İklim Değişikliği Bakanlığı
+            all_sections, stats = scrape_cevre_sehircilik_iklim_mevzuat(url=kurum_url)
+            print_cevre_sehircilik_results(all_sections, stats)
+        elif kurum_id == "68bd76d0f639e817a373d15e":  # Türkiye İş Kurumu
+            all_sections, stats = scrape_turkiye_is_kurumu_mevzuat(url=kurum_url)
+            print_turkiye_is_kurumu_results(all_sections, stats)
+        elif kurum_id == "68d937162db1b7f69a79a804":  # Adli Tıp Kurumu
+            all_sections, stats = scrape_adli_tip_kurumu_mevzuat(url=kurum_url)
+            print_adli_tip_kurumu_results(all_sections, stats)
+        elif kurum_id == "68d937822db1b7f69a79a80a":  # Ahiler Kalkınma Ajansı
+            all_sections, stats = scrape_ahiler_kalkinma_ajansi_mevzuat(url=kurum_url)
+            print_ahiler_kalkinma_results(all_sections, stats)
+        elif kurum_id == "68d936a22db1b7f69a79a801":  # Afet ve Acil Durum Yönetimi Başkanlığı
+            all_sections, stats = scrape_afet_acil_durum_mevzuat(url=kurum_url)
+            print_afet_acil_durum_results(all_sections, stats)
+        elif kurum_id == "68d9386c2db1b7f69a79a810":  # Akaryakıt İkmal ve Nato Pol Tesisleri İşletme (ANT) Başkanlığı
+            all_sections, stats = scrape_ant_baskanligi_mevzuat(url=kurum_url)
+            print_ant_baskanligi_results(all_sections, stats)
+        elif kurum_id == "68d938da2db1b7f69a79a813":  # Anayasa Mahkemesi Başkanlığı
+            all_sections, stats = scrape_anayasa_mahkemesi_mevzuat(url=kurum_url)
+            print_anayasa_mahkemesi_results(all_sections, stats)
+        elif kurum_id == "68d93a0b2db1b7f69a79a819":  # Ankara Kalkınma Ajansı
+            all_sections, stats = scrape_ankara_kalkinma_ajansi_mevzuat(url=kurum_url)
+            print_ankara_kalkinma_results(all_sections, stats)
+        elif kurum_id == "68d93c762db1b7f69a79a822":  # Atatürk Kültür, Dil ve Tarih Yüksek Kurumu Başkanlığı
+            all_sections, stats = scrape_ataturk_kultur_dil_tarih_mevzuat(url=kurum_url)
+            print_ataturk_kultur_dil_tarih_results(all_sections, stats)
+        elif kurum_id == "68d93cb92db1b7f69a79a825":  # Atatürk Orman Çiftliği Müdürlüğü
+            all_sections, stats = scrape_ataturk_orman_ciftligi_mevzuat(url=kurum_url)
+            print_ataturk_orman_ciftligi_results(all_sections, stats)
+        elif kurum_id == "68d93d4c2db1b7f69a79a82e":  # Avrupa Birliği Başkanlığı
+            all_sections, stats = scrape_avrupa_birligi_mevzuat(url=kurum_url)
+            print_avrupa_birligi_results(all_sections, stats)
+        elif kurum_id == "68d93dac2db1b7f69a79a831":  # Avrupa Birliği Eğitim ve Gençlik Programları Merkezi Başkanlığı
+            all_sections, stats = scrape_avrupa_birligi_egitim_genclik_mevzuat(url=kurum_url)
+            print_avrupa_birligi_egitim_genclik_results(all_sections, stats)
+        elif kurum_id == "68d93ea22db1b7f69a79a834":  # Bankacılık Düzenleme ve Denetleme Kurumu
+            all_sections, stats = scrape_bankacilik_duzenleme_denetleme_mevzuat(url=kurum_url)
+            print_bankacilik_duzenleme_denetleme_results(all_sections, stats)
+        elif kurum_id == "68d93f8a2db1b7f69a79a83a":  # Basın İlan Kurumu
+            all_sections, stats = scrape_basin_ilan_kurumu_mevzuat(url=kurum_url)
+            print_basin_ilan_kurumu_results(all_sections, stats)
+        elif kurum_id == "68d9400a2db1b7f69a79a83d":  # Batı Akdeniz Kalkınma Ajansı
+            all_sections, stats = scrape_bati_akdeniz_kalkinma_ajansi_mevzuat(url=kurum_url)
+            print_bati_akdeniz_kalkinma_ajansi_results(all_sections, stats)
+        elif kurum_id == "68d940d62db1b7f69a79a840":  # Bilgi Teknolojileri ve İletişim Kurumu
+            all_sections, stats = scrape_bilgi_teknolojileri_iletisim_kurumu_mevzuat(url=kurum_url)
+            print_bilgi_teknolojileri_iletisim_kurumu_results(all_sections, stats)
+        elif kurum_id == "68d941e32db1b7f69a79a843":  # Boru Hatları İle Petrol Taşıma A.Ş. Genel Müdürlüğü
+            all_sections, stats = scrape_boru_hatlari_petrol_tasima_mevzuat(url=kurum_url)
+            print_boru_hatlari_petrol_tasima_results(all_sections, stats)
+        elif kurum_id == "68d942e02db1b7f69a79a849":  # Bursa Eskişehir Bilecik Kalkınma Ajansı
+            all_sections, stats = scrape_bursa_eskisehir_bilecik_kalkinma_ajansi_mevzuat(url=kurum_url)
+            print_bursa_eskisehir_bilecik_kalkinma_ajansi_results(all_sections, stats)
+        elif kurum_id == "68d9435b2db1b7f69a79a84c":  # Cumhurbaşkanlığı
+            all_sections, stats = scrape_cumhurbaskanligi_mevzuat(url=kurum_url)
+            print_cumhurbaskanligi_results(all_sections, stats)
+        elif kurum_id == "68d946832db1b7f69a79a852":  # Cumhurbaşkanlığı Yatırım ve Finans Ofisi
+            all_sections, stats = scrape_cumhurbaskanligi_yatirim_finans_ofisi_mevzuat(url=kurum_url)
+            print_cumhurbaskanligi_yatirim_finans_ofisi_results(all_sections, stats)
+        elif kurum_id == "68d949c22db1b7f69a79a858":  # Çalışma ve Sosyal Güvenlik Eğitim ve Araştırma Merkezi (ÇASGEM)
+            all_sections, stats = scrape_calisma_sosyal_guvenlik_egitim_arastirma_merkezi_mevzuat(url=kurum_url)
+            print_calisma_sosyal_guvenlik_egitim_arastirma_merkezi_results(all_sections, stats)
+        elif kurum_id == "68d94a5a2db1b7f69a79a85b":  # Çanakkale Savaşları Gelibolu Tarihi Alan Başkanlığı
+            all_sections, stats = scrape_canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_mevzuat(url=kurum_url)
+            print_canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_results(all_sections, stats)
+        elif kurum_id == "68d94b2e2db1b7f69a79a85e":  # Çay İşletmeleri Genel Müdürlüğü
+            all_sections, stats = scrape_cay_isletmeleri_genel_mudurlugu_mevzuat(url=kurum_url)
+            print_cay_isletmeleri_genel_mudurlugu_results(all_sections, stats)
+        elif kurum_id == "68d94c8b2db1b7f69a79a864":  # Çukurova Kalkınma Ajansı
+            all_sections, stats = scrape_cukurova_kalkinma_ajansi_mevzuat(url=kurum_url)
+            print_cukurova_kalkinma_ajansi_results(all_sections, stats)
+        else:
+            # Varsayılan olarak SGK scraper'ını kullan
+            all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
+            print_sgk_results(all_sections, stats)
         
         # Response hazırla (benzersiz item id'leri, uploaded durumu ve bölüm başlık temizleme)
         item_id_counter = 1
@@ -283,11 +523,29 @@ async def scrape_mevzuatgpt(req: PortalScanRequest):
             items = section.get('items', [])
             items_with_ids = []
             for item in items:
-                # Yükleme durumunu belirle - SADECE belge_adi == baslik tam eşitliği (Title-Case normalize)
-                item_title_tc = to_title(item.get('baslik', ''))
-                is_uploaded = (item_title_tc in uploaded_title_set)
-                # Portal (MongoDB metadata.pdf_adi karşılaştırması)
-                is_in_portal = (item_title_tc in portal_title_set)
+                # Yükleme durumunu belirle - tam eşleşme (normalize edilmiş)
+                item_baslik = item.get('baslik', '')
+                item_normalized = normalize_for_exact_match(item_baslik)
+                is_uploaded = False
+                
+                # API'den gelen belgelerle karşılaştır (tam eşleşme)
+                for doc in uploaded_docs:
+                    belge_adi = doc.get("belge_adi", "")
+                    if belge_adi:
+                        belge_normalized = normalize_for_exact_match(belge_adi)
+                        if item_normalized == belge_normalized:
+                            is_uploaded = True
+                            break
+                
+                # Portal (MongoDB metadata.pdf_adi karşılaştırması) - tam eşleşme
+                is_in_portal = False
+                for doc in portal_docs:
+                    pdf_adi = doc.get("pdf_adi", "")
+                    if pdf_adi:
+                        pdf_normalized = normalize_for_exact_match(pdf_adi)
+                        if item_normalized == pdf_normalized:
+                            is_in_portal = True
+                            break
                 
                 # Benzersiz id ver ve önbelleğe yaz
                 item_payload = {
@@ -312,7 +570,7 @@ async def scrape_mevzuatgpt(req: PortalScanRequest):
                 "items": items_with_ids
             })
         
-        # sections_stats'ı uploaded_title_set ile yeniden hesapla (eski cache mantığı yerine)
+        # sections_stats'ı is_title_similar ile yeniden hesapla
         sections_stats_clean = []
         for section in all_sections:
             raw_title = section['section_title']
@@ -323,8 +581,19 @@ async def scrape_mevzuatgpt(req: PortalScanRequest):
             not_uploaded_count = 0
             
             for item in items:
-                item_title_tc = to_title(item.get('baslik', ''))
-                is_uploaded = (item_title_tc in uploaded_title_set)
+                item_baslik = item.get('baslik', '')
+                item_normalized = normalize_for_exact_match(item_baslik)
+                is_uploaded = False
+                
+                # API'den gelen belgelerle karşılaştır (tam eşleşme)
+                for doc in uploaded_docs:
+                    belge_adi = doc.get("belge_adi", "")
+                    if belge_adi:
+                        belge_normalized = normalize_for_exact_match(belge_adi)
+                        if item_normalized == belge_normalized:
+                            is_uploaded = True
+                            break
+                
                 if is_uploaded:
                     uploaded_count += 1
                 else:
@@ -435,11 +704,96 @@ async def scrape_kurum_portal(req: PortalScanRequest):
         except Exception as e:
             print(f"⚠️ MongoDB portal listesi okunamadı: {str(e)}")
         
-        # Scraping işlemini başlat (URL parametresi ile)
-        all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
-        
-        # Sonuçları konsola yazdır
-        print_results_to_console(all_sections, stats)
+        # Kurum ID'sine göre doğru scraper'ı seç
+        kurum_id = req.id
+        if kurum_id == "68bbf6df8ef4e8023c19641d":  # SGK
+            all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
+            print_sgk_results(all_sections, stats)
+        elif kurum_id == "68d7c697f087b8dfc4effcdc":  # Adalet Bakanlığı
+            all_sections, stats = scrape_adalet_bakanligi_mevzuat(url=kurum_url)
+            print_adalet_results(all_sections, stats)
+        elif kurum_id == "68d937dd2db1b7f69a79a80d":  # Aile ve Sosyal Hizmetler Bakanlığı
+            all_sections, stats = scrape_aile_sosyal_hizmetler_mevzuat(url=kurum_url)
+            print_aile_sosyal_results(all_sections, stats)
+        elif kurum_id == "68d947492db1b7f69a79a855":  # Çalışma ve Sosyal Güvenlik Bakanlığı
+            all_sections, stats = scrape_calisma_sosyal_guvenlik_mevzuat(url=kurum_url)
+            print_calisma_sosyal_results(all_sections, stats)
+        elif kurum_id == "68d94b822db1b7f69a79a861":  # Çevre, Şehircilik ve İklim Değişikliği Bakanlığı
+            all_sections, stats = scrape_cevre_sehircilik_iklim_mevzuat(url=kurum_url)
+            print_cevre_sehircilik_results(all_sections, stats)
+        elif kurum_id == "68bd76d0f639e817a373d15e":  # Türkiye İş Kurumu
+            all_sections, stats = scrape_turkiye_is_kurumu_mevzuat(url=kurum_url)
+            print_turkiye_is_kurumu_results(all_sections, stats)
+        elif kurum_id == "68d937162db1b7f69a79a804":  # Adli Tıp Kurumu
+            all_sections, stats = scrape_adli_tip_kurumu_mevzuat(url=kurum_url)
+            print_adli_tip_kurumu_results(all_sections, stats)
+        elif kurum_id == "68d937822db1b7f69a79a80a":  # Ahiler Kalkınma Ajansı
+            all_sections, stats = scrape_ahiler_kalkinma_ajansi_mevzuat(url=kurum_url)
+            print_ahiler_kalkinma_results(all_sections, stats)
+        elif kurum_id == "68d936a22db1b7f69a79a801":  # Afet ve Acil Durum Yönetimi Başkanlığı
+            all_sections, stats = scrape_afet_acil_durum_mevzuat(url=kurum_url)
+            print_afet_acil_durum_results(all_sections, stats)
+        elif kurum_id == "68d9386c2db1b7f69a79a810":  # Akaryakıt İkmal ve Nato Pol Tesisleri İşletme (ANT) Başkanlığı
+            all_sections, stats = scrape_ant_baskanligi_mevzuat(url=kurum_url)
+            print_ant_baskanligi_results(all_sections, stats)
+        elif kurum_id == "68d938da2db1b7f69a79a813":  # Anayasa Mahkemesi Başkanlığı
+            all_sections, stats = scrape_anayasa_mahkemesi_mevzuat(url=kurum_url)
+            print_anayasa_mahkemesi_results(all_sections, stats)
+        elif kurum_id == "68d93a0b2db1b7f69a79a819":  # Ankara Kalkınma Ajansı
+            all_sections, stats = scrape_ankara_kalkinma_ajansi_mevzuat(url=kurum_url)
+            print_ankara_kalkinma_results(all_sections, stats)
+        elif kurum_id == "68d93c762db1b7f69a79a822":  # Atatürk Kültür, Dil ve Tarih Yüksek Kurumu Başkanlığı
+            all_sections, stats = scrape_ataturk_kultur_dil_tarih_mevzuat(url=kurum_url)
+            print_ataturk_kultur_dil_tarih_results(all_sections, stats)
+        elif kurum_id == "68d93cb92db1b7f69a79a825":  # Atatürk Orman Çiftliği Müdürlüğü
+            all_sections, stats = scrape_ataturk_orman_ciftligi_mevzuat(url=kurum_url)
+            print_ataturk_orman_ciftligi_results(all_sections, stats)
+        elif kurum_id == "68d93d4c2db1b7f69a79a82e":  # Avrupa Birliği Başkanlığı
+            all_sections, stats = scrape_avrupa_birligi_mevzuat(url=kurum_url)
+            print_avrupa_birligi_results(all_sections, stats)
+        elif kurum_id == "68d93dac2db1b7f69a79a831":  # Avrupa Birliği Eğitim ve Gençlik Programları Merkezi Başkanlığı
+            all_sections, stats = scrape_avrupa_birligi_egitim_genclik_mevzuat(url=kurum_url)
+            print_avrupa_birligi_egitim_genclik_results(all_sections, stats)
+        elif kurum_id == "68d93ea22db1b7f69a79a834":  # Bankacılık Düzenleme ve Denetleme Kurumu
+            all_sections, stats = scrape_bankacilik_duzenleme_denetleme_mevzuat(url=kurum_url)
+            print_bankacilik_duzenleme_denetleme_results(all_sections, stats)
+        elif kurum_id == "68d93f8a2db1b7f69a79a83a":  # Basın İlan Kurumu
+            all_sections, stats = scrape_basin_ilan_kurumu_mevzuat(url=kurum_url)
+            print_basin_ilan_kurumu_results(all_sections, stats)
+        elif kurum_id == "68d9400a2db1b7f69a79a83d":  # Batı Akdeniz Kalkınma Ajansı
+            all_sections, stats = scrape_bati_akdeniz_kalkinma_ajansi_mevzuat(url=kurum_url)
+            print_bati_akdeniz_kalkinma_ajansi_results(all_sections, stats)
+        elif kurum_id == "68d940d62db1b7f69a79a840":  # Bilgi Teknolojileri ve İletişim Kurumu
+            all_sections, stats = scrape_bilgi_teknolojileri_iletisim_kurumu_mevzuat(url=kurum_url)
+            print_bilgi_teknolojileri_iletisim_kurumu_results(all_sections, stats)
+        elif kurum_id == "68d941e32db1b7f69a79a843":  # Boru Hatları İle Petrol Taşıma A.Ş. Genel Müdürlüğü
+            all_sections, stats = scrape_boru_hatlari_petrol_tasima_mevzuat(url=kurum_url)
+            print_boru_hatlari_petrol_tasima_results(all_sections, stats)
+        elif kurum_id == "68d942e02db1b7f69a79a849":  # Bursa Eskişehir Bilecik Kalkınma Ajansı
+            all_sections, stats = scrape_bursa_eskisehir_bilecik_kalkinma_ajansi_mevzuat(url=kurum_url)
+            print_bursa_eskisehir_bilecik_kalkinma_ajansi_results(all_sections, stats)
+        elif kurum_id == "68d9435b2db1b7f69a79a84c":  # Cumhurbaşkanlığı
+            all_sections, stats = scrape_cumhurbaskanligi_mevzuat(url=kurum_url)
+            print_cumhurbaskanligi_results(all_sections, stats)
+        elif kurum_id == "68d946832db1b7f69a79a852":  # Cumhurbaşkanlığı Yatırım ve Finans Ofisi
+            all_sections, stats = scrape_cumhurbaskanligi_yatirim_finans_ofisi_mevzuat(url=kurum_url)
+            print_cumhurbaskanligi_yatirim_finans_ofisi_results(all_sections, stats)
+        elif kurum_id == "68d949c22db1b7f69a79a858":  # Çalışma ve Sosyal Güvenlik Eğitim ve Araştırma Merkezi (ÇASGEM)
+            all_sections, stats = scrape_calisma_sosyal_guvenlik_egitim_arastirma_merkezi_mevzuat(url=kurum_url)
+            print_calisma_sosyal_guvenlik_egitim_arastirma_merkezi_results(all_sections, stats)
+        elif kurum_id == "68d94a5a2db1b7f69a79a85b":  # Çanakkale Savaşları Gelibolu Tarihi Alan Başkanlığı
+            all_sections, stats = scrape_canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_mevzuat(url=kurum_url)
+            print_canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_results(all_sections, stats)
+        elif kurum_id == "68d94b2e2db1b7f69a79a85e":  # Çay İşletmeleri Genel Müdürlüğü
+            all_sections, stats = scrape_cay_isletmeleri_genel_mudurlugu_mevzuat(url=kurum_url)
+            print_cay_isletmeleri_genel_mudurlugu_results(all_sections, stats)
+        elif kurum_id == "68d94c8b2db1b7f69a79a864":  # Çukurova Kalkınma Ajansı
+            all_sections, stats = scrape_cukurova_kalkinma_ajansi_mevzuat(url=kurum_url)
+            print_cukurova_kalkinma_ajansi_results(all_sections, stats)
+        else:
+            # Varsayılan olarak SGK scraper'ını kullan
+            all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
+            print_sgk_results(all_sections, stats)
         
         # Response hazırla (benzersiz item id'leri, portal durumu ve bölüm başlık temizleme)
         item_id_counter = 1
@@ -1300,12 +1654,14 @@ async def delete_kurum_duyuru(id: str):
 async def create_kurum(
     kurum_adi: str = Form(...),
     aciklama: Optional[str] = Form(None),
+    detsis: Optional[str] = Form(None),
     logo: Optional[UploadFile] = File(None)
 ):
     """
     Yeni kurum oluşturur (multipart/form-data).
     - kurum_adi: Zorunlu
     - aciklama: Opsiyonel
+    - detsis: Opsiyonel (DETSIS numarası)
     - logo: Opsiyonel (PNG, JPG, JPEG, SVG, GIF, WEBP)
     """
     try:
@@ -1371,6 +1727,9 @@ async def create_kurum(
         if aciklama:
             data["aciklama"] = aciklama.strip()
         
+        if detsis:
+            data["detsis"] = detsis.strip()
+        
         if logo_url:
             data["kurum_logo"] = logo_url
         
@@ -1417,12 +1776,14 @@ async def update_kurum(
     id: str,
     kurum_adi: Optional[str] = Form(None),
     aciklama: Optional[str] = Form(None),
+    detsis: Optional[str] = Form(None),
     logo: Optional[UploadFile] = File(None)
 ):
     """
     Kurum bilgilerini günceller (multipart/form-data).
     - kurum_adi: Opsiyonel (gönderilirse güncellenir)
     - aciklama: Opsiyonel (gönderilirse güncellenir)
+    - detsis: Opsiyonel (gönderilirse güncellenir - DETSIS numarası)
     - logo: Opsiyonel (gönderilirse yüklenir ve güncellenir) (PNG, JPG, JPEG, SVG, GIF, WEBP)
     """
     try:
@@ -1493,6 +1854,9 @@ async def update_kurum(
         
         if aciklama is not None:
             update_data["aciklama"] = aciklama.strip()
+        
+        if detsis is not None:
+            update_data["detsis"] = detsis.strip()
         
         if not update_data:
             client.close()
@@ -1789,12 +2153,13 @@ def _save_to_mongodb(metadata: Dict[str, Any], content: str) -> Optional[str]:
 
 
 def _extract_pdf_text_markdown(pdf_path: str) -> Optional[str]:
-    """PDF'den markdown formatında metin çıkarır"""
+    """PDF'den markdown formatında metin çıkarır (OCR desteği ile)"""
     try:
         import pdfplumber
         from io import BytesIO
         
         extracted_text = ""
+        needs_ocr = False
         
         with open(pdf_path, 'rb') as f:
             pdf_bytes = f.read()
@@ -1805,13 +2170,30 @@ def _extract_pdf_text_markdown(pdf_path: str) -> Optional[str]:
             for page_num, page in enumerate(pdf.pages, 1):
                 try:
                     page_text = page.extract_text()
-                    if page_text:
+                    if page_text and len(page_text.strip()) > 10:
                         # Basit markdown formatı
                         formatted_text = _format_text_as_markdown(page_text)
                         extracted_text += formatted_text + "\n\n"
+                    else:
+                        needs_ocr = True
                 except Exception as page_error:
-                    print(f"Sayfa {page_num} işlenirken hata: {str(page_error)}")
+                    needs_ocr = True
                     continue
+        
+        # Eğer metin yoksa OCR ile dene
+        if (not extracted_text.strip() or needs_ocr) and len(pdf.pages) > 0:
+            print("📸 PDF'de metin bulunamadı, OCR ile metin çıkarılıyor...")
+            try:
+                processor = PDFProcessor()
+                if processor._check_ocr_available():
+                    ocr_text = processor.extract_text_from_pages(pdf_path, 1, len(pdf.pages), use_ocr=True)
+                    if ocr_text:
+                        extracted_text = _format_text_as_markdown(ocr_text)
+                        print("✅ OCR ile metin başarıyla çıkarıldı")
+                else:
+                    print("⚠️ OCR kütüphaneleri kurulu değil")
+            except Exception as ocr_error:
+                print(f"⚠️ OCR hatası: {str(ocr_error)}")
         
         return extracted_text.strip() if extracted_text.strip() else None
         
@@ -1888,8 +2270,12 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
     else:
         analyzer = None  # type: ignore
 
+    # PDF'de metin var mı kontrol et, yoksa OCR kullan
+    pdf_structure = processor.analyze_pdf_structure(pdf_path)
+    use_ocr = pdf_structure.get('needs_ocr', False) or not pdf_structure.get('has_text', True)
+    
     for i, section in enumerate(sections):
-        section_text = processor.extract_text_from_pages(pdf_path, section['start_page'], section['end_page'])
+        section_text = processor.extract_text_from_pages(pdf_path, section['start_page'], section['end_page'], use_ocr=use_ocr)
         if use_ai and section_text.strip():
             analysis = analyzer.analyze_section_content(section_text)  # type: ignore
             title = analysis.get('title', f'Bölüm {i + 1}')
@@ -1973,9 +2359,16 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
         return {"error": str(e)}
 
 
-@app.post("/api/kurum/process", response_model=ProcessResponse, tags=["SGK Scraper"], summary="Kurum item ID ile PDF indir, analiz et ve yükle")
+@app.post("/api/kurum/process", response_model=ProcessResponse, tags=["SGK Scraper"], summary="Link ile PDF indir, analiz et ve yükle")
 async def process_item(req: ProcessRequest):
     try:
+        # Mode kontrolü
+        mode = req.mode.lower() if req.mode else "t"
+        if mode not in ["m", "p", "t"]:
+            raise HTTPException(status_code=400, detail="Geçersiz mode. 'm', 'p' veya 't' olmalı.")
+        
+        print(f"🔧 İşlem modu: {mode.upper()} ({'MevzuatGPT' if mode == 'm' else 'Portal' if mode == 'p' else 'Tamamı'})")
+        
         # kurumlar.json'dan kurum bilgisini çek
         kurum_url = None
         kurum_adi = None
@@ -2003,63 +2396,20 @@ async def process_item(req: ProcessRequest):
             )
         
         print(f"📋 Kurum: {kurum_adi}")
-        print(f"🔗 URL: {kurum_url}")
         
-        # Önce otomatik olarak scrape yap (önbellek yoksa veya her zaman)
-        print("\n" + "="*80)
-        print(f"🔄 /api/kurum/process: Önce otomatik scrape yapılıyor (Kurum: {kurum_adi})...")
-        print("="*80)
-        
-        # Önce API'den yüklü documents'ları çek (çerez kullanmadan, direkt API)
-        uploaded_title_set = set()
-        cfg = _load_config()
-        if cfg:
-            token = _login_with_config(cfg)
-            if token:
-                api_base_url = cfg.get("api_base_url")
-                print(f"📡 API'den yüklü documents çekiliyor...")
-                try:
-                    uploaded_docs = get_uploaded_documents(api_base_url, token, use_streamlit=False)
-                    for doc in uploaded_docs:
-                        val = doc.get("belge_adi", "")
-                        if val:
-                            uploaded_title_set.add(to_title(val))
-                    print(f"✅ {len(uploaded_docs)} document'tan {len(uploaded_title_set)} benzersiz belge_adi bulundu")
-                except Exception as e:
-                    print(f"⚠️ Documents çekme hatası: {str(e)}")
-        
-        # Scraping işlemini başlat (kurum URL'si ile)
-        all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
-        
-        # Önbelleği güncelle
-        global last_item_map
-        last_item_map = {}
-        item_id_counter = 1
-        for section in all_sections:
-            raw_title = section['section_title']
-            clean_title = re.sub(r"\d+\s*$", "", raw_title).strip()
-            items = section.get('items', [])
-            for item in items:
-                last_item_map[item_id_counter] = {
-                    "section_title": clean_title,
-                    "baslik": item.get('baslik', ''),
-                    "link": item.get('link', '')
-                }
-                item_id_counter += 1
-        
-        print(f"✅ Scrape başarılı, {len(last_item_map)} item önbelleğe eklendi")
-        
-        # ID doğrula ve önbellekten bul
-        item = last_item_map.get(req.id)
-        if not item:
-            raise HTTPException(status_code=400, detail=f"Geçersiz id: {req.id}. Mevcut id aralığı: 1-{len(last_item_map)}")
-
-        category = item.get('section_title', '')
-        institution = kurum_adi  # Kurum adını kullan
-        document_name = item.get('baslik', '')
-        pdf_url = item.get('link', '')
+        # Link ve diğer bilgileri request'ten al
+        pdf_url = req.link
         if not pdf_url:
-            raise HTTPException(status_code=400, detail="İlgili item için link bulunamadı.")
+            raise HTTPException(status_code=400, detail="Link parametresi zorunludur.")
+        
+        # Category ve document_name request'ten al veya varsayılan değerler kullan
+        category = req.category if req.category else "Genel"
+        document_name = req.document_name if req.document_name else "Belge"
+        institution = kurum_adi  # Kurum adını kullan
+        
+        print(f"🔗 PDF Link: {pdf_url}")
+        print(f"📄 Belge Adı: {document_name}")
+        print(f"📂 Kategori: {category}")
 
         # PDF'i indir
         print("📥 PDF indiriliyor...")
@@ -2068,7 +2418,7 @@ async def process_item(req: ProcessRequest):
             raise HTTPException(status_code=500, detail="İndirilen dosya geçerli bir PDF değil.")
         print("✅ PDF indirme başarılı")
 
-        # Analiz ve metadata
+        # Analiz ve metadata (tüm modlar için)
         print("🔍 PDF analiz ediliyor...")
         api_key = _get_deepseek_api_key()
         if not api_key:
@@ -2080,139 +2430,163 @@ async def process_item(req: ProcessRequest):
         metadata_list = analysis_result['metadata_list']
         print("✅ PDF analiz başarılı")
 
-        # PDF'leri böl ve çıktıyı oluştur
-        print("📄 PDF bölümleme yapılıyor...")
-        output_dir = _split_pdfs(pdf_path, sections, metadata_list)
-        print("✅ PDF bölümleme başarılı")
-
-        # Yükleme (config ile login)
-        print("📤 PDF'ler MevzuatGPT'ye yükleniyor...")
-        cfg = _load_config()
-        upload_resp = None
-        if cfg:
-            token = _login_with_config(cfg)
-            if token:
-                upload_resp = _upload_bulk(cfg, token, output_dir, category, institution, document_name, metadata_list)
-                if upload_resp:
-                    print("✅ PDF'ler MevzuatGPT'ye yüklendi")
-                else:
-                    print("⚠️ PDF yükleme başarısız")
+        # PDF'leri böl ve çıktıyı oluştur (sadece 'm' ve 't' modları için)
+        output_dir = None
+        if mode in ["m", "t"]:
+            print("📄 PDF bölümleme yapılıyor...")
+            output_dir = _split_pdfs(pdf_path, sections, metadata_list)
+            print("✅ PDF bölümleme başarılı")
         else:
-            print("⚠️ Config bulunamadı, PDF yükleme atlandı")
+            print("⏭️ PDF bölümleme atlandı (Portal modu)")
 
-        # MongoDB ve Bunny.net işlemleri (mevcut işlemlerden sonra)
+        # MevzuatGPT'ye yükleme (sadece 'm' ve 't' modları için)
+        upload_resp = None
+        if mode in ["m", "t"]:
+            print("📤 PDF'ler MevzuatGPT'ye yükleniyor...")
+            cfg = _load_config()
+            if cfg:
+                token = _login_with_config(cfg)
+                if token:
+                    upload_resp = _upload_bulk(cfg, token, output_dir, category, institution, document_name, metadata_list)
+                    if upload_resp:
+                        print("✅ PDF'ler MevzuatGPT'ye yüklendi")
+                    else:
+                        print("⚠️ PDF yükleme başarısız")
+            else:
+                print("⚠️ Config bulunamadı, PDF yükleme atlandı")
+        else:
+            print("⏭️ MevzuatGPT yükleme atlandı (Portal modu)")
+
+        # Portal'a yükleme (sadece 'p' ve 't' modları için)
         mongodb_metadata_id = None
-        try:
-            print("📦 MongoDB ve Bunny.net işlemleri başlatılıyor...")
-            print("📤 Ana PDF Bunny.net'e yükleniyor...")
-            
-            # PDF bilgilerini al
-            processor = PDFProcessor()
-            pdf_info = processor.analyze_pdf_structure(pdf_path)
-            total_pages = pdf_info.get('total_pages', 0)
-            
-            # PDF dosya boyutu (MB)
-            pdf_size_bytes = os.path.getsize(pdf_path)
-            pdf_size_mb = round(pdf_size_bytes / (1024 * 1024), 2)
-            
-            # pdf_sections_metadata.json'dan keywords ve description'ları birleştir
-            metadata_json_path = Path(output_dir) / "pdf_sections_metadata.json"
-            all_keywords = []
-            all_descriptions = []
-            
-            if metadata_json_path.exists():
-                try:
-                    with open(metadata_json_path, 'r', encoding='utf-8') as f:
-                        metadata_json = json.load(f)
-                        pdf_sections = metadata_json.get('pdf_sections', [])
-                        for section in pdf_sections:
-                            keywords = section.get('keywords', '')
-                            description = section.get('description', '')
-                            if keywords:
-                                # Keywords string ise virgülle ayrılmış olabilir
-                                if isinstance(keywords, str):
-                                    keywords_list = [k.strip() for k in keywords.split(',') if k.strip()]
-                                    all_keywords.extend(keywords_list)
-                                elif isinstance(keywords, list):
-                                    all_keywords.extend(keywords)
-                            if description:
-                                all_descriptions.append(description.strip())
-                except Exception as e:
-                    print(f"Metadata JSON okuma hatası: {str(e)}")
-            
-            # Keywords ve descriptions birleştir
-            combined_keywords = ', '.join(all_keywords) if all_keywords else ''
-            combined_description = ' '.join(all_descriptions) if all_descriptions else ''
-            
-            # Açıklama karakter sınırı (max 500 karakter)
-            if len(combined_description) > 500:
-                combined_description = combined_description[:497] + "..."
-            
-            # Ana PDF'yi bunny.net'e yükle
-            # Dosya adını güvenli hale getir (Türkçe karakterleri İngilizce'ye çevir, kaldırma)
-            transliterated_name = _transliterate_turkish(document_name)
-            # Sadece harfler, rakamlar, boşluk ve tireleri koru, diğer karakterleri kaldır
-            safe_pdf_adi = re.sub(r'[^a-zA-Z0-9\s-]', '', transliterated_name).strip()
-            # Boşlukları alt çizgi ile değiştir
-            safe_pdf_adi = re.sub(r'\s+', '_', safe_pdf_adi)
-            # Çoklu alt çizgileri tek alt çizgi yap
-            safe_pdf_adi = re.sub(r'_+', '_', safe_pdf_adi)
-            bunny_filename = f"{safe_pdf_adi}_{ObjectId()}.pdf"
-            pdf_url = _upload_to_bunny(pdf_path, bunny_filename)
-            
-            # pdf_adi: tekrar başlık metni olarak kaydedilecek
-            pdf_adi = document_name
-            
-            # Slug oluştur (alt tire ile, sınırsız)
-            url_slug = _create_url_slug(document_name)
-            
-            # Yükleme tarihi
-            now = datetime.now()
-            upload_date_str = now.strftime('%Y-%m-%d')
-            upload_datetime_str = now.isoformat()
-            
-            if pdf_url:
-                print("✅ Ana PDF Bunny.net'e yüklendi")
-            else:
-                print("⚠️ Bunny.net yükleme başarısız, MongoDB işlemi devam ediyor...")
-            
-            # PDF'den markdown formatında metin çıkar
-            print("📝 PDF içeriği markdown formatına çevriliyor...")
-            markdown_content = _extract_pdf_text_markdown(pdf_path)
-            if not markdown_content:
-                markdown_content = "PDF içeriği çıkarılamadı."
-            
-            # Metadata oluştur
-            print("💾 MongoDB'ye kaydediliyor...")
-            mongodb_metadata = {
-                "pdf_adi": pdf_adi,
-                "kurum_id": req.kurum_id,  # Request'ten gelen kurum ID'sini kullan
-                "belge_turu": category,
-                "belge_durumu": "Yürürlükte",
-                "belge_yayin_tarihi": upload_date_str,
-                "yururluluk_tarihi": upload_date_str,
-                "etiketler": "KAYSİS",
-                "anahtar_kelimeler": combined_keywords,
-                "aciklama": combined_description,
-                "url_slug": url_slug,
-                "status": "aktif",
-                "sayfa_sayisi": total_pages,
-                "dosya_boyutu_mb": pdf_size_mb,
-                "yukleme_tarihi": upload_datetime_str,
-                "pdf_url": pdf_url or ""
-            }
-            
-            # MongoDB'ye kaydet
-            mongodb_metadata_id = _save_to_mongodb(mongodb_metadata, markdown_content)
-            
-            if mongodb_metadata_id:
-                print(f"✅ MongoDB kaydı başarılı: metadata_id={mongodb_metadata_id}")
-            else:
-                print("⚠️ MongoDB kaydı başarısız")
+        if mode in ["p", "t"]:
+            try:
+                print("📦 MongoDB ve Bunny.net işlemleri başlatılıyor...")
+                print("📤 Ana PDF Bunny.net'e yükleniyor...")
                 
-        except Exception as e:
-            print(f"⚠️ MongoDB/Bunny.net işlemleri sırasında hata: {str(e)}")
-            # Hata olsa bile ana işlemi tamamla
+                # PDF bilgilerini al
+                processor = PDFProcessor()
+                pdf_info = processor.analyze_pdf_structure(pdf_path)
+                total_pages = pdf_info.get('total_pages', 0)
+                
+                # PDF dosya boyutu (MB)
+                pdf_size_bytes = os.path.getsize(pdf_path)
+                pdf_size_mb = round(pdf_size_bytes / (1024 * 1024), 2)
+                
+                # Keywords ve description'ları topla
+                all_keywords = []
+                all_descriptions = []
+                
+                # Mode'a göre metadata kaynağını belirle
+                if mode == "t" and output_dir:
+                    # 't' modunda pdf_sections_metadata.json'dan al
+                    metadata_json_path = Path(output_dir) / "pdf_sections_metadata.json"
+                    if metadata_json_path.exists():
+                        try:
+                            with open(metadata_json_path, 'r', encoding='utf-8') as f:
+                                metadata_json = json.load(f)
+                                pdf_sections = metadata_json.get('pdf_sections', [])
+                                for section in pdf_sections:
+                                    keywords = section.get('keywords', '')
+                                    description = section.get('description', '')
+                                    if keywords:
+                                        # Keywords string ise virgülle ayrılmış olabilir
+                                        if isinstance(keywords, str):
+                                            keywords_list = [k.strip() for k in keywords.split(',') if k.strip()]
+                                            all_keywords.extend(keywords_list)
+                                        elif isinstance(keywords, list):
+                                            all_keywords.extend(keywords)
+                                    if description:
+                                        all_descriptions.append(description.strip())
+                        except Exception as e:
+                            print(f"Metadata JSON okuma hatası: {str(e)}")
+                else:
+                    # 'p' modunda veya json yoksa analiz sonuçlarından al
+                    for section_meta in metadata_list:
+                        keywords = section_meta.get('keywords', '')
+                        description = section_meta.get('description', '')
+                        if keywords:
+                            if isinstance(keywords, str):
+                                keywords_list = [k.strip() for k in keywords.split(',') if k.strip()]
+                                all_keywords.extend(keywords_list)
+                            elif isinstance(keywords, list):
+                                all_keywords.extend(keywords)
+                        if description:
+                            all_descriptions.append(description.strip())
+                
+                # Keywords ve descriptions birleştir
+                combined_keywords = ', '.join(all_keywords) if all_keywords else ''
+                combined_description = ' '.join(all_descriptions) if all_descriptions else ''
+                
+                # Açıklama karakter sınırı (max 500 karakter)
+                if len(combined_description) > 500:
+                    combined_description = combined_description[:497] + "..."
+                
+                # Ana PDF'yi bunny.net'e yükle
+                # Dosya adını güvenli hale getir (Türkçe karakterleri İngilizce'ye çevir, kaldırma)
+                transliterated_name = _transliterate_turkish(document_name)
+                # Sadece harfler, rakamlar, boşluk ve tireleri koru, diğer karakterleri kaldır
+                safe_pdf_adi = re.sub(r'[^a-zA-Z0-9\s-]', '', transliterated_name).strip()
+                # Boşlukları alt çizgi ile değiştir
+                safe_pdf_adi = re.sub(r'\s+', '_', safe_pdf_adi)
+                # Çoklu alt çizgileri tek alt çizgi yap
+                safe_pdf_adi = re.sub(r'_+', '_', safe_pdf_adi)
+                bunny_filename = f"{safe_pdf_adi}_{ObjectId()}.pdf"
+                pdf_url = _upload_to_bunny(pdf_path, bunny_filename)
+                
+                # pdf_adi: tekrar başlık metni olarak kaydedilecek
+                pdf_adi = document_name
+                
+                # Slug oluştur (alt tire ile, sınırsız)
+                url_slug = _create_url_slug(document_name)
+                
+                # Yükleme tarihi
+                now = datetime.now()
+                upload_date_str = now.strftime('%Y-%m-%d')
+                upload_datetime_str = now.isoformat()
+                
+                if pdf_url:
+                    print("✅ Ana PDF Bunny.net'e yüklendi")
+                else:
+                    print("⚠️ Bunny.net yükleme başarısız, MongoDB işlemi devam ediyor...")
+                
+                # PDF'den markdown formatında metin çıkar
+                print("📝 PDF içeriği markdown formatına çevriliyor...")
+                markdown_content = _extract_pdf_text_markdown(pdf_path)
+                if not markdown_content:
+                    markdown_content = "PDF içeriği çıkarılamadı."
+                
+                # Metadata oluştur
+                print("💾 MongoDB'ye kaydediliyor...")
+                mongodb_metadata = {
+                    "pdf_adi": pdf_adi,
+                    "kurum_id": req.kurum_id,  # Request'ten gelen kurum ID'sini kullan
+                    "belge_turu": category,
+                    "belge_durumu": "Yürürlükte",
+                    "belge_yayin_tarihi": upload_date_str,
+                    "yururluluk_tarihi": upload_date_str,
+                    "etiketler": "KAYSİS",
+                    "anahtar_kelimeler": combined_keywords,
+                    "aciklama": combined_description,
+                    "url_slug": url_slug,
+                    "status": "aktif",
+                    "sayfa_sayisi": total_pages,
+                    "dosya_boyutu_mb": pdf_size_mb,
+                    "yukleme_tarihi": upload_datetime_str,
+                    "pdf_url": pdf_url or ""
+                }
+                
+                # MongoDB'ye kaydet
+                mongodb_metadata_id = _save_to_mongodb(mongodb_metadata, markdown_content)
+                
+                if mongodb_metadata_id:
+                    print(f"✅ MongoDB kaydı başarılı: metadata_id={mongodb_metadata_id}")
+                else:
+                    print("⚠️ MongoDB kaydı başarısız")
+                    
+            except Exception as e:
+                print(f"⚠️ MongoDB/Bunny.net işlemleri sırasında hata: {str(e)}")
+                # Hata olsa bile ana işlemi tamamla
         
         # Tüm işlemler başarılı olduktan sonra pdf_output klasörünü temizle
         try:
@@ -2229,15 +2603,23 @@ async def process_item(req: ProcessRequest):
         except Exception as e:
             print(f"⚠️ pdf_output temizleme hatası: {str(e)}")
 
+        # Response mesajını mode'a göre özelleştir
+        mode_messages = {
+            "m": "MevzuatGPT'ye yükleme tamamlandı",
+            "p": "Portal'a yükleme tamamlandı",
+            "t": "Tüm işlemler tamamlandı (MevzuatGPT + Portal)"
+        }
+        message = mode_messages.get(mode, "İşlem tamamlandı")
+        
         return ProcessResponse(
             success=True,
-            message="İşlem tamamlandı",
+            message=message,
             data=ProcessData(
                 category=category,
                 institution=institution,
                 document_name=document_name,
                 output_dir=output_dir,
-                sections_count=len(sections),
+                sections_count=len(sections) if sections else 0,
                 upload_response=upload_resp
             )
         )

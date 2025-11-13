@@ -177,3 +177,221 @@ Preferred communication style: Simple, everyday language.
 - Environment variable support for `DEEPSEEK_API_KEY`
 - API key required via environment variable (no hardcoded fallback for security)
 - Configurable section parameters (min/max pages per section)
+
+## Modüler Scraper Yapısı
+
+### Genel Bakış
+
+Proje, farklı kurumlar için modüler bir scraper yapısına sahiptir. Her kurum için ayrı bir scraper modülü oluşturulabilir ve bu modüller `scrapers/` klasöründe tutulur.
+
+### Mevcut Modüller
+
+1. **SGK KAYSİS Scraper** (`scrapers/sgk_kaysis_scraper.py`)
+   - Sosyal Güvenlik Kurumu'nun KAYSİS sitesinden mevzuat tarama
+   - URL: `https://kms.kaysis.gov.tr/Home/Kurum/22620739`
+   - Accordion yapısından mevzuat başlıkları ve linklerini çıkarır
+   - API ile yüklü mevzuatları karşılaştırır
+
+### Modül Yapısı
+
+```
+scrapers/
+├── __init__.py                    # Modül export'ları
+└── sgk_kaysis_scraper.py          # SGK KAYSİS scraper modülü
+```
+
+### Yeni Kurum Scraper'ı Ekleme
+
+Farklı bir kurum için scraper eklemek için aşağıdaki adımları izleyin:
+
+#### 1. Yeni Scraper Modülü Oluştur
+
+`scrapers/` klasöründe yeni bir dosya oluşturun:
+- Dosya adı: `{kurum_adi}_scraper.py` (örn: `adliye_scraper.py`, `saglik_scraper.py`)
+- Dosya formatı: Python modülü
+
+#### 2. Temel Fonksiyonları Implement Et
+
+Yeni scraper modülünde aşağıdaki fonksiyonları implement edin:
+
+```python
+"""
+{Kurum Adı} Scraper Module
+{Kurum açıklaması}
+"""
+import requests
+from bs4 import BeautifulSoup
+from typing import List, Dict, Any, Optional, Tuple
+import re
+import json
+
+def scrape_{kurum}_mevzuat(url: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    {Kurum} sitesinden mevzuatları tarar
+    
+    Args:
+        url: Taranacak kurum URL'i
+    
+    Returns:
+        Tuple[List[Dict[str, Any]], Dict[str, Any]]: (all_sections, stats)
+            - all_sections: Tüm bölümler ve mevzuatlar
+            - stats: İstatistikler
+    """
+    # Scraping mantığınızı buraya yazın
+    pass
+
+def print_results_to_console(all_sections: List[Dict[str, Any]], stats: Dict[str, Any]):
+    """Sonuçları konsola yazdırır"""
+    # Konsol çıktısı mantığınızı buraya yazın
+    pass
+```
+
+#### 3. Yardımcı Fonksiyonlar (Opsiyonel)
+
+Eğer kurumun özel ihtiyaçları varsa, yardımcı fonksiyonlar ekleyebilirsiniz:
+- `normalize_text()`: Metin normalizasyonu
+- `is_title_similar()`: Başlık karşılaştırması
+- `turkish_title()`: Türkçe karakter desteği
+- `get_uploaded_documents()`: API'den döküman çekme (ortak kullanılabilir)
+
+#### 4. `__init__.py` Dosyasını Güncelle
+
+`scrapers/__init__.py` dosyasına yeni modülü ekleyin:
+
+```python
+from .{kurum_adi}_scraper import (
+    scrape_{kurum}_mevzuat,
+    print_results_to_console
+)
+
+__all__ = [
+    # ... mevcut export'lar
+    'scrape_{kurum}_mevzuat',
+    'print_results_to_console'
+]
+```
+
+#### 5. `api_server.py`'de Kullan
+
+`api_server.py` dosyasında yeni scraper'ı import edin ve endpoint'lerde kullanın:
+
+```python
+from scrapers.{kurum_adi}_scraper import (
+    scrape_{kurum}_mevzuat,
+    print_results_to_console
+)
+
+# Endpoint'lerde kullanım
+@app.post("/api/{kurum}/scrape")
+async def scrape_{kurum}(req: PortalScanRequest):
+    # ... kurum URL'ini kurumlar.json'dan çek
+    all_sections, stats = scrape_{kurum}_mevzuat(url=kurum_url)
+    print_results_to_console(all_sections, stats)
+    # ... response hazırla
+```
+
+#### 6. `kurumlar.json` Dosyasını Güncelle
+
+Yeni kurumu `kurumlar.json` dosyasına ekleyin:
+
+```json
+{
+  "kurumlar": [
+    {
+      "id": "{kurum_id}",
+      "kurum_adi": "{Kurum Adı}",
+      "url": "{Kurum URL'i}"
+    }
+  ]
+}
+```
+
+### Örnek: Yeni Kurum Ekleme
+
+**Adım 1:** `scrapers/adliye_scraper.py` dosyası oluştur
+
+```python
+"""
+Adliye Bakanlığı Scraper Module
+Adliye Bakanlığı mevzuat tarama modülü
+"""
+import requests
+from bs4 import BeautifulSoup
+from typing import List, Dict, Any, Tuple
+import re
+
+def scrape_adliye_mevzuat(url: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Adliye Bakanlığı sitesinden mevzuatları tarar"""
+    # Scraping mantığınız
+    all_sections = []
+    stats = {
+        'total_sections': 0,
+        'total_items': 0,
+        'uploaded_documents_count': 0,
+        'sections_stats': []
+    }
+    return all_sections, stats
+
+def print_results_to_console(all_sections: List[Dict[str, Any]], stats: Dict[str, Any]):
+    """Sonuçları konsola yazdırır"""
+    print(f"Toplam {stats.get('total_items', 0)} mevzuat bulundu")
+```
+
+**Adım 2:** `scrapers/__init__.py` güncelle
+
+```python
+from .adliye_scraper import scrape_adliye_mevzuat, print_results_to_console
+```
+
+**Adım 3:** `api_server.py`'de kullan
+
+```python
+from scrapers.adliye_scraper import scrape_adliye_mevzuat
+
+@app.post("/api/adliye/scrape")
+async def scrape_adliye(req: PortalScanRequest):
+    # ... implementation
+```
+
+**Adım 4:** `kurumlar.json` güncelle
+
+```json
+{
+  "kurumlar": [
+    {
+      "id": "adliye_bakanligi_id",
+      "kurum_adi": "Adliye Bakanlığı",
+      "url": "https://example.com/adliye/mevzuat"
+    }
+  ]
+}
+```
+
+### Ortak Fonksiyonlar
+
+Eğer birden fazla scraper'da ortak kullanılacak fonksiyonlar varsa, bunları `scrapers/sgk_kaysis_scraper.py` içinden import edebilir veya `scrapers/utils.py` gibi bir ortak modül oluşturabilirsiniz:
+
+```python
+# Yeni scraper'da
+from scrapers.sgk_kaysis_scraper import (
+    get_uploaded_documents,
+    check_if_document_exists,
+    normalize_text
+)
+```
+
+### Best Practices
+
+1. **Modülerlik**: Her kurum için ayrı modül, kod tekrarından kaçının
+2. **Hata Yönetimi**: Try-except blokları ile hataları yakalayın
+3. **Logging**: Print veya logging ile işlem durumunu bildirin
+4. **Dokümantasyon**: Fonksiyon docstring'leri ekleyin
+5. **Tip Hints**: Python type hints kullanın
+6. **Test**: Her scraper için test senaryoları oluşturun
+
+### Notlar
+
+- Mevcut `scrape_sgk_mevzuat` fonksiyonu SGK KAYSİS'e özeldir
+- Farklı kurumlar farklı HTML yapılarına sahip olabilir
+- Her kurum için scraping mantığı özelleştirilmelidir
+- API entegrasyonu (yüklü mevzuat kontrolü) ortak kullanılabilir

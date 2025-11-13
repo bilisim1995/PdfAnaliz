@@ -10,4 +10,9 @@ dependencies = [
     "streamlit>=1.50.0",
     "fastapi>=0.104.0",
     "uvicorn>=0.24.0",
+    "playwright>=1.40.0",
+    "beautifulsoup4>=4.12.0",
+    "pytesseract>=0.3.10",
+    "pdf2image>=1.16.3",
+    "pillow>=10.0.0",
 ]

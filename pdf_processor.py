@@ -2,13 +2,84 @@ import pypdf
 from pathlib import Path
 import tempfile
 import math
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+import os
 
 class PDFProcessor:
     """PDF işleme ve bölümlendirme sınıfı"""
     
     def __init__(self):
-        pass
+        self._ocr_available = None  # Lazy check for OCR availability
+    
+    def _check_ocr_available(self) -> bool:
+        """OCR kütüphanesinin kullanılabilir olup olmadığını kontrol eder"""
+        if self._ocr_available is not None:
+            return self._ocr_available
+        
+        try:
+            import pytesseract
+            from pdf2image import convert_from_path
+            # Tesseract'ın kurulu olup olmadığını kontrol et
+            try:
+                pytesseract.get_tesseract_version()
+                self._ocr_available = True
+            except Exception:
+                self._ocr_available = False
+        except ImportError:
+            self._ocr_available = False
+        
+        return self._ocr_available
+    
+    def _get_available_ocr_languages(self) -> str:
+        """Kullanılabilir OCR dillerini kontrol eder ve uygun dil string'i döner"""
+        try:
+            import pytesseract
+            available_langs = pytesseract.get_languages()
+            
+            # Türkçe ve İngilizce varsa ikisini de kullan
+            if 'tur' in available_langs and 'eng' in available_langs:
+                return 'tur+eng'
+            elif 'tur' in available_langs:
+                return 'tur'
+            elif 'eng' in available_langs:
+                return 'eng'
+            else:
+                return 'eng'  # Varsayılan olarak İngilizce
+        except Exception:
+            return 'eng'  # Hata durumunda İngilizce
+    
+    def _extract_text_with_ocr(self, pdf_path: str, page_num: int) -> str:
+        """OCR kullanarak sayfadan metin çıkarır"""
+        try:
+            import pytesseract
+            from pdf2image import convert_from_path
+            from PIL import Image
+            
+            # PDF sayfasını görüntüye çevir
+            images = convert_from_path(
+                pdf_path,
+                first_page=page_num + 1,
+                last_page=page_num + 1,
+                dpi=300  # Yüksek çözünürlük için
+            )
+            
+            if not images:
+                return ""
+            
+            # Kullanılabilir dilleri al
+            ocr_lang = self._get_available_ocr_languages()
+            
+            # OCR ile metin çıkar
+            text = pytesseract.image_to_string(
+                images[0],
+                lang=ocr_lang
+            )
+            
+            return text.strip()
+        except ImportError:
+            raise Exception("OCR kütüphaneleri kurulu değil. 'pip install pytesseract pdf2image pillow' ve 'brew install tesseract tesseract-lang' komutlarını çalıştırın.")
+        except Exception as e:
+            raise Exception(f"OCR hatası: {str(e)}")
     
     def analyze_pdf_structure(self, pdf_path: str) -> Dict[str, Any]:
         """PDF dosyasının yapısını analiz eder"""
@@ -20,18 +91,39 @@ class PDFProcessor:
                 # İlk birkaç sayfaydan metin örneği al
                 sample_text = ""
                 sample_pages = min(3, total_pages)
+                has_text = False
+                needs_ocr = False
                 
                 for i in range(sample_pages):
                     try:
                         page_text = reader.pages[i].extract_text()
-                        sample_text += page_text + "\n"
+                        if page_text and len(page_text.strip()) > 0:
+                            sample_text += page_text + "\n"
+                            has_text = True
+                        else:
+                            # Metin yoksa OCR gerekebilir
+                            needs_ocr = True
                     except Exception as e:
+                        needs_ocr = True
                         continue
+                
+                # Eğer metin yoksa ve OCR kullanılabilirse, OCR ile dene
+                if not has_text and needs_ocr and self._check_ocr_available():
+                    print("📸 PDF'de metin bulunamadı, OCR ile metin çıkarılıyor...")
+                    try:
+                        ocr_text = self._extract_text_with_ocr(pdf_path, 0)
+                        if ocr_text:
+                            sample_text = ocr_text[:1000]
+                            has_text = True
+                            print("✅ OCR ile metin başarıyla çıkarıldı")
+                    except Exception as ocr_error:
+                        print(f"⚠️ OCR hatası: {str(ocr_error)}")
                 
                 return {
                     'total_pages': total_pages,
                     'sample_text': sample_text[:1000],  # İlk 1000 karakter
-                    'has_text': len(sample_text.strip()) > 0
+                    'has_text': has_text,
+                    'needs_ocr': needs_ocr and not has_text
                 }
         except Exception as e:
             raise Exception(f"PDF analiz hatası: {str(e)}")
@@ -109,8 +201,8 @@ class PDFProcessor:
         except Exception as e:
             raise Exception(f"Bölüm PDF oluşturma hatası: {str(e)}")
     
-    def extract_text_from_pages(self, pdf_path: str, start_page: int, end_page: int) -> str:
-        """Belirtilen sayfa aralığından metin çıkarır"""
+    def extract_text_from_pages(self, pdf_path: str, start_page: int, end_page: int, use_ocr: bool = False) -> str:
+        """Belirtilen sayfa aralığından metin çıkarır (OCR desteği ile)"""
         try:
             text = ""
             with open(pdf_path, 'rb') as file:
@@ -120,9 +212,29 @@ class PDFProcessor:
                     if page_num < len(reader.pages):
                         try:
                             page_text = reader.pages[page_num].extract_text()
-                            text += page_text + "\n"
+                            
+                            # Eğer metin yoksa ve OCR kullanılabilirse, OCR ile dene
+                            if (not page_text or len(page_text.strip()) < 10) and (use_ocr or self._check_ocr_available()):
+                                try:
+                                    ocr_text = self._extract_text_with_ocr(pdf_path, page_num)
+                                    if ocr_text:
+                                        page_text = ocr_text
+                                        print(f"✅ Sayfa {page_num + 1} için OCR ile metin çıkarıldı")
+                                except Exception as ocr_error:
+                                    print(f"⚠️ Sayfa {page_num + 1} için OCR hatası: {str(ocr_error)}")
+                            
+                            if page_text:
+                                text += page_text + "\n"
                         except Exception as e:
-                            # Sayfa metin çıkarma hatası - devam et
+                            # Sayfa metin çıkarma hatası - OCR ile dene
+                            if use_ocr or self._check_ocr_available():
+                                try:
+                                    ocr_text = self._extract_text_with_ocr(pdf_path, page_num)
+                                    if ocr_text:
+                                        text += ocr_text + "\n"
+                                        continue
+                                except Exception:
+                                    pass
                             text += f"[Sayfa {page_num + 1}: Metin çıkarılamadı]\n"
                             continue
             
@@ -130,21 +242,36 @@ class PDFProcessor:
         except Exception as e:
             raise Exception(f"Metin çıkarma hatası: {str(e)}")
     
-    def extract_all_page_texts(self, pdf_path: str) -> List[str]:
-        """Tüm sayfaların metinlerini çıkarır"""
+    def extract_all_page_texts(self, pdf_path: str, use_ocr: bool = False) -> List[str]:
+        """Tüm sayfaların metinlerini çıkarır (OCR desteği ile)"""
         try:
             page_texts = []
             with open(pdf_path, 'rb') as file:
                 reader = pypdf.PdfReader(file)
                 
+                # Önce normal metin çıkarmayı dene
                 for page_num in range(len(reader.pages)):
                     try:
                         page_text = reader.pages[page_num].extract_text()
                         page_texts.append(page_text if page_text else "")
                     except Exception as e:
-                        # Sayfa metin çıkarma hatası - boş string ekle
                         page_texts.append("")
                         continue
+                
+                # Eğer metin yoksa ve OCR kullanılabilirse, OCR ile dene
+                if (not any(page_texts) or all(len(t.strip()) < 10 for t in page_texts)) and (use_ocr or self._check_ocr_available()):
+                    print("📸 PDF'de metin bulunamadı, OCR ile tüm sayfalar işleniyor...")
+                    page_texts = []
+                    for page_num in range(len(reader.pages)):
+                        try:
+                            ocr_text = self._extract_text_with_ocr(pdf_path, page_num)
+                            page_texts.append(ocr_text if ocr_text else "")
+                            if (page_num + 1) % 5 == 0:
+                                print(f"📸 OCR: {page_num + 1}/{len(reader.pages)} sayfa işlendi...")
+                        except Exception as e:
+                            page_texts.append("")
+                            continue
+                    print("✅ OCR ile tüm sayfalar işlendi")
             
             return page_texts
         except Exception as e:

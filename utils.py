@@ -5,8 +5,48 @@ from pathlib import Path
 from urllib.parse import urlparse
 import uuid
 
+def html_to_pdf(url: str) -> str:
+    """HTML sayfasını PDF'ye çevirir (playwright kullanarak)"""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        raise Exception("Playwright kurulu değil. Lütfen 'pip install playwright' ve 'playwright install chromium' komutlarını çalıştırın.")
+    
+    temp_dir = tempfile.gettempdir()
+    filename = f"html_to_pdf_{uuid.uuid4().hex[:8]}.pdf"
+    temp_path = os.path.join(temp_dir, filename)
+    
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        
+        # Sayfayı URL'den aç (daha iyi render için)
+        page.goto(url, wait_until="networkidle", timeout=60000)
+        
+        # Sayfanın yüklenmesini bekle
+        page.wait_for_timeout(2000)  # 2 saniye bekle
+        
+        # PDF olarak kaydet
+        page.pdf(
+            path=temp_path,
+            format="A4",
+            print_background=True,
+            margin={"top": "20mm", "right": "20mm", "bottom": "20mm", "left": "20mm"}
+        )
+        
+        browser.close()
+    
+    # Dosya boyutunu kontrol et
+    file_size = os.path.getsize(temp_path)
+    if file_size < 1024:  # 1KB'dan küçükse
+        os.remove(temp_path)
+        raise ValueError("Oluşturulan PDF çok küçük")
+    
+    return temp_path
+
+
 def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
-    """URL'den PDF indirir ve geçici klasöre kaydeder"""
+    """URL'den PDF indirir veya HTML sayfasını PDF'ye çevirir"""
     import time
     
     last_error = None
@@ -21,36 +61,49 @@ def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
             # HTTP headers
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'application/pdf,*/*'
+                'Accept': 'application/pdf,text/html,application/xhtml+xml,*/*'
             }
             
-            # PDF'i indir (daha uzun timeout ve allow_redirects)
+            # İçeriği indir (daha uzun timeout ve allow_redirects)
             response = requests.get(url, headers=headers, timeout=120, allow_redirects=True)  # 2 dakika timeout
             response.raise_for_status()
         
             # Content-Type kontrolü
             content_type = response.headers.get('content-type', '').lower()
-            if 'pdf' not in content_type and not url.lower().endswith('.pdf'):
-                # İçeriği kontrol et (PDF magic number)
-                if not response.content.startswith(b'%PDF-'):
-                    raise ValueError("İndirilen dosya PDF formatında değil")
             
-            # Geçici dosya oluştur
-            temp_dir = tempfile.gettempdir()
-            filename = f"downloaded_pdf_{uuid.uuid4().hex[:8]}.pdf"
-            temp_path = os.path.join(temp_dir, filename)
+            # PDF kontrolü
+            is_pdf = False
+            if 'pdf' in content_type or url.lower().endswith('.pdf'):
+                # PDF magic number kontrolü
+                if response.content.startswith(b'%PDF-'):
+                    is_pdf = True
             
-            # Dosyayı kaydet
-            with open(temp_path, 'wb') as f:
-                f.write(response.content)
-            
-            # Dosya boyutunu kontrol et
-            file_size = os.path.getsize(temp_path)
-            if file_size < 1024:  # 1KB'dan küçükse
-                os.remove(temp_path)
-                raise ValueError("İndirilen dosya çok küçük (PDF olmayabilir)")
-            
-            return temp_path
+            # Eğer PDF ise direkt kaydet
+            if is_pdf:
+                # Geçici dosya oluştur
+                temp_dir = tempfile.gettempdir()
+                filename = f"downloaded_pdf_{uuid.uuid4().hex[:8]}.pdf"
+                temp_path = os.path.join(temp_dir, filename)
+                
+                # Dosyayı kaydet
+                with open(temp_path, 'wb') as f:
+                    f.write(response.content)
+                
+                # Dosya boyutunu kontrol et
+                file_size = os.path.getsize(temp_path)
+                if file_size < 1024:  # 1KB'dan küçükse
+                    os.remove(temp_path)
+                    raise ValueError("İndirilen dosya çok küçük (PDF olmayabilir)")
+                
+                return temp_path
+            else:
+                # HTML sayfası ise PDF'ye çevir
+                print("📄 HTML sayfası tespit edildi, PDF'ye çevriliyor...")
+                
+                # HTML'i PDF'ye çevir (playwright ile direkt URL'den)
+                pdf_path = html_to_pdf(url)
+                print("✅ HTML sayfası PDF'ye çevrildi")
+                return pdf_path
             
         except (requests.exceptions.RequestException, ValueError) as e:
             last_error = e
@@ -61,14 +114,14 @@ def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
             continue
         except Exception as e:
             # Diğer hatalar için hemen çık
-            raise Exception(f"PDF indirme hatası: {str(e)}")
+            raise Exception(f"PDF indirme/dönüştürme hatası: {str(e)}")
     
     # Tüm denemeler başarısız olduysa
     if last_error:
         if isinstance(last_error, requests.exceptions.RequestException):
             raise Exception(f"URL'den indirme hatası ({max_retries} deneme sonucu): {str(last_error)}")
         else:
-            raise Exception(f"PDF indirme hatası ({max_retries} deneme sonucu): {str(last_error)}")
+            raise Exception(f"PDF indirme/dönüştürme hatası ({max_retries} deneme sonucu): {str(last_error)}")
     
     raise Exception("PDF indirilemedi (bilinmeyen hata)")
 
