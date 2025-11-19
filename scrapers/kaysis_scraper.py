@@ -1,6 +1,6 @@
 """
-Basın İlan Kurumu KAYSİS Scraper Module
-Basın İlan Kurumu'nun KAYSİS sitesinden mevzuat tarama modülü
+KAYSİS Scraper Module
+KAYSİS sitesinden mevzuat tarama modülü - Tüm kurumlar için tek scraper
 """
 import requests
 from bs4 import BeautifulSoup
@@ -26,7 +26,7 @@ def normalize_text(text: str) -> str:
     if not text:
         return ""
     # Küçük harfe çevir, fazla boşlukları temizle
-    normalized = re.sub(r"\s+", " ", text.lower().strip())
+    normalized = re.sub(r'\s+', ' ', text.lower().strip())
     return normalized
 
 
@@ -67,7 +67,7 @@ def turkish_title(text: str) -> str:
     tmp = re.sub(r"\bsigortali\b", "sigortalı", tmp)
     tmp = re.sub(r"\bişlemleri\b", "işlemleri", tmp)
     # Kelime kelime baş harf büyüt
-    words = re.split(r"(\s+)", tmp)
+    words = re.split(r'(\s+)', tmp)
     titled_parts = []
     for w in words:
         if not w or w.isspace():
@@ -232,19 +232,22 @@ def check_if_document_exists(document_title: str, uploaded_documents: List[Dict[
 # KAYSİS Scraping Fonksiyonları
 # ============================================================================
 
-def scrape_basin_ilan_kurumu_mevzuat(url: str = "https://kms.kaysis.gov.tr/Home/Kurum/33555850") -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def scrape_kaysis_mevzuat(detsis: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
-    KAYSİS sitesinden Basın İlan Kurumu mevzuatlarını tarar ve API ile karşılaştırır
+    KAYSİS sitesinden mevzuatları tarar ve API ile karşılaştırır
     
     Args:
-        url: Taranacak kurum URL'i (varsayılan: Basın İlan Kurumu KAYSİS URL'i)
+        detsis: DETSIS numarası (KAYSİS kurum ID'si)
     
     Returns:
         Tuple[List[Dict[str, Any]], Dict[str, Any]]: (all_sections, stats)
             - all_sections: Tüm bölümler ve mevzuatlar
             - stats: İstatistikler (toplam bölüm, toplam mevzuat, yüklü sayısı vb.)
     """
-    print("🔍 Basın İlan Kurumu Mevzuat Tarama Başlatılıyor...")
+    # KAYSİS URL'ini oluştur
+    url = f"https://kms.kaysis.gov.tr/Home/Kurum/{detsis}"
+    
+    print(f"🔍 Mevzuat Tarama Başlatılıyor...")
     print(f"📡 Site: {url}")
     
     # Config'den bilgileri yükle
@@ -364,7 +367,7 @@ def scrape_basin_ilan_kurumu_mevzuat(url: str = "https://kms.kaysis.gov.tr/Home/
                         continue
                     
                     # Sadece sayılardan oluşan metinleri atla
-                    if re.match(r"^[\d\s.,]+$", link_text.strip()):
+                    if re.match(r'^[\d\s.,]+$', link_text.strip()):
                         continue
                     
                     # Link URL'ini tamamla
@@ -381,7 +384,7 @@ def scrape_basin_ilan_kurumu_mevzuat(url: str = "https://kms.kaysis.gov.tr/Home/
                     
                     # Metni formatla: yalnızca başlığın ilk harfi büyük, diğerleri küçük (Türkçe)
                     formatted_text = turkish_sentence_case(link_text)
-                    formatted_text = re.sub(r"\d+$", "", formatted_text).strip()
+                    formatted_text = re.sub(r'\d+$', '', formatted_text).strip()
                     original_text = link_text.strip()
                     
                     items_in_section.append({
@@ -466,7 +469,7 @@ def print_results_to_console(all_sections: List[Dict[str, Any]], stats: Dict[str
         uploaded_documents: Yüklü dökümanlar listesi (opsiyonel, stats'ten de alınabilir)
     """
     print("\n" + "="*80)
-    print("📋 BULUNAN MEVZUATLAR (Basın İlan Kurumu)")
+    print("📋 BULUNAN MEVZUATLAR")
     print("="*80)
     
     if not all_sections:
@@ -515,3 +518,4 @@ def print_results_to_console(all_sections: List[Dict[str, Any]], stats: Dict[str
     print("="*80)
     print("✅ Tarama tamamlandı!")
     print("="*80)
+

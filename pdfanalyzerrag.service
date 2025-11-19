@@ -1,0 +1,28 @@
+[Unit]
+Description=PdfAnalyzerRAG API Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/pdfanalyzerrag
+Environment="PATH=/opt/pdfanalyzerrag/venv/bin"
+EnvironmentFile=/opt/pdfanalyzerrag/.env
+ExecStart=/opt/pdfanalyzerrag/venv/bin/uvicorn api_server:app --host 0.0.0.0 --port 8000 --workers 4
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pdfanalyzerrag
+
+# Güvenlik ayarları
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/pdfanalyzerrag
+
+[Install]
+WantedBy=multi-user.target
+

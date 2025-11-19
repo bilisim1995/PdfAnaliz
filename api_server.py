@@ -7,118 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional, List
 import uvicorn
-from scrapers.sgk_kaysis_scraper import (
-    scrape_sgk_mevzuat,
-    print_results_to_console as print_sgk_results,
+from scrapers.kaysis_scraper import (
+    scrape_kaysis_mevzuat,
+    print_results_to_console,
     get_uploaded_documents
-)
-from scrapers.adalet_bakanligi_scraper import (
-    scrape_adalet_bakanligi_mevzuat,
-    print_results_to_console as print_adalet_results
-)
-from scrapers.aile_sosyal_hizmetler_scraper import (
-    scrape_aile_sosyal_hizmetler_mevzuat,
-    print_results_to_console as print_aile_sosyal_results
-)
-from scrapers.calisma_sosyal_guvenlik_scraper import (
-    scrape_calisma_sosyal_guvenlik_mevzuat,
-    print_results_to_console as print_calisma_sosyal_results
-)
-from scrapers.cevre_sehircilik_iklim_scraper import (
-    scrape_cevre_sehircilik_iklim_mevzuat,
-    print_results_to_console as print_cevre_sehircilik_results
-)
-from scrapers.turkiye_is_kurumu_scraper import (
-    scrape_turkiye_is_kurumu_mevzuat,
-    print_results_to_console as print_turkiye_is_kurumu_results
-)
-from scrapers.adli_tip_kurumu_scraper import (
-    scrape_adli_tip_kurumu_mevzuat,
-    print_results_to_console as print_adli_tip_kurumu_results
-)
-from scrapers.ahiler_kalkinma_ajansi_scraper import (
-    scrape_ahiler_kalkinma_ajansi_mevzuat,
-    print_results_to_console as print_ahiler_kalkinma_results
-)
-from scrapers.afet_acil_durum_scraper import (
-    scrape_afet_acil_durum_mevzuat,
-    print_results_to_console as print_afet_acil_durum_results
-)
-from scrapers.ant_baskanligi_scraper import (
-    scrape_ant_baskanligi_mevzuat,
-    print_results_to_console as print_ant_baskanligi_results
-)
-from scrapers.anayasa_mahkemesi_scraper import (
-    scrape_anayasa_mahkemesi_mevzuat,
-    print_results_to_console as print_anayasa_mahkemesi_results
-)
-from scrapers.ankara_kalkinma_ajansi_scraper import (
-    scrape_ankara_kalkinma_ajansi_mevzuat,
-    print_results_to_console as print_ankara_kalkinma_results
-)
-from scrapers.ataturk_kultur_dil_tarih_scraper import (
-    scrape_ataturk_kultur_dil_tarih_mevzuat,
-    print_results_to_console as print_ataturk_kultur_dil_tarih_results
-)
-from scrapers.ataturk_orman_ciftligi_scraper import (
-    scrape_ataturk_orman_ciftligi_mevzuat,
-    print_results_to_console as print_ataturk_orman_ciftligi_results
-)
-from scrapers.avrupa_birligi_scraper import (
-    scrape_avrupa_birligi_mevzuat,
-    print_results_to_console as print_avrupa_birligi_results
-)
-from scrapers.avrupa_birligi_egitim_genclik_scraper import (
-    scrape_avrupa_birligi_egitim_genclik_mevzuat,
-    print_results_to_console as print_avrupa_birligi_egitim_genclik_results
-)
-from scrapers.bankacilik_duzenleme_denetleme_scraper import (
-    scrape_bankacilik_duzenleme_denetleme_mevzuat,
-    print_results_to_console as print_bankacilik_duzenleme_denetleme_results
-)
-from scrapers.basin_ilan_kurumu_scraper import (
-    scrape_basin_ilan_kurumu_mevzuat,
-    print_results_to_console as print_basin_ilan_kurumu_results
-)
-from scrapers.bati_akdeniz_kalkinma_ajansi_scraper import (
-    scrape_bati_akdeniz_kalkinma_ajansi_mevzuat,
-    print_results_to_console as print_bati_akdeniz_kalkinma_ajansi_results
-)
-from scrapers.bilgi_teknolojileri_iletisim_kurumu_scraper import (
-    scrape_bilgi_teknolojileri_iletisim_kurumu_mevzuat,
-    print_results_to_console as print_bilgi_teknolojileri_iletisim_kurumu_results
-)
-from scrapers.boru_hatlari_petrol_tasima_scraper import (
-    scrape_boru_hatlari_petrol_tasima_mevzuat,
-    print_results_to_console as print_boru_hatlari_petrol_tasima_results
-)
-from scrapers.bursa_eskisehir_bilecik_kalkinma_ajansi_scraper import (
-    scrape_bursa_eskisehir_bilecik_kalkinma_ajansi_mevzuat,
-    print_results_to_console as print_bursa_eskisehir_bilecik_kalkinma_ajansi_results
-)
-from scrapers.cumhurbaskanligi_scraper import (
-    scrape_cumhurbaskanligi_mevzuat,
-    print_results_to_console as print_cumhurbaskanligi_results
-)
-from scrapers.cumhurbaskanligi_yatirim_finans_ofisi_scraper import (
-    scrape_cumhurbaskanligi_yatirim_finans_ofisi_mevzuat,
-    print_results_to_console as print_cumhurbaskanligi_yatirim_finans_ofisi_results
-)
-from scrapers.calisma_sosyal_guvenlik_egitim_arastirma_merkezi_scraper import (
-    scrape_calisma_sosyal_guvenlik_egitim_arastirma_merkezi_mevzuat,
-    print_results_to_console as print_calisma_sosyal_guvenlik_egitim_arastirma_merkezi_results
-)
-from scrapers.canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_scraper import (
-    scrape_canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_mevzuat,
-    print_results_to_console as print_canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_results
-)
-from scrapers.cay_isletmeleri_genel_mudurlugu_scraper import (
-    scrape_cay_isletmeleri_genel_mudurlugu_mevzuat,
-    print_results_to_console as print_cay_isletmeleri_genel_mudurlugu_results
-)
-from scrapers.cukurova_kalkinma_ajansi_scraper import (
-    scrape_cukurova_kalkinma_ajansi_mevzuat,
-    print_results_to_console as print_cukurova_kalkinma_ajansi_results
 )
 import threading
 import re
@@ -270,19 +162,25 @@ class ScrapeResponse(BaseModel):
 
 
 class PortalScanRequest(BaseModel):
-    id: str = Field(..., description="Kurum MongoDB ObjectId (kurumlar.json'dan)")
+    id: str = Field(..., description="Kurum MongoDB ObjectId")
+    detsis: str = Field(..., description="DETSIS numarası (KAYSİS kurum ID'si)")
+    type: str = Field(default="kaysis", description="Scraper tipi (varsayılan: kaysis)")
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "id": "68bbf6df8ef4e8023c19641d"
+                "id": "68bbf6df8ef4e8023c19641d",
+                "detsis": "60521689",
+                "type": "kaysis"
             }
         }
     }
 
 
 class ProcessRequest(BaseModel):
-    kurum_id: str = Field(..., description="Kurum MongoDB ObjectId (kurumlar.json'dan)")
+    kurum_id: str = Field(..., description="Kurum MongoDB ObjectId")
+    detsis: str = Field(..., description="DETSIS numarası (KAYSİS kurum ID'si)")
+    type: str = Field(default="kaysis", description="Scraper tipi (varsayılan: kaysis)")
     link: str = Field(..., description="PDF indirme linki")
     mode: str = Field(default="t", description="İşlem modu: 'm' (MevzuatGPT), 'p' (Portal), 't' (Tamamı)")
     category: Optional[str] = Field(default=None, description="Belge kategorisi (opsiyonel)")
@@ -292,6 +190,8 @@ class ProcessRequest(BaseModel):
         "json_schema_extra": {
             "example": {
                 "kurum_id": "68bbf6df8ef4e8023c19641d",
+                "detsis": "60521689",
+                "type": "kaysis",
                 "link": "https://kms.kaysis.gov.tr/Home/Goster/104890",
                 "mode": "t",
                 "category": "Kanunlar",
@@ -332,51 +232,40 @@ async def root():
 async def scrape_mevzuatgpt(req: PortalScanRequest):
     """
     Belirtilen kurumun mevzuatlarını tarar ve sonuçları konsola yazdırır.
-    Kurum bilgisi kurumlar.json dosyasından alınır.
+    type parametresi ile scraper tipi belirlenir (şu an için sadece 'kaysis' desteklenir).
     """
     try:
         print("\n" + "="*80)
-        print(f"🚀 API Endpoint'ten Kurum Mevzuat Tarama İsteği Alındı (Kurum ID: {req.id})")
+        print(f"🚀 API Endpoint'ten Kurum Mevzuat Tarama İsteği Alındı (Kurum ID: {req.id}, Type: {req.type})")
         print("="*80)
         
-        # kurumlar.json'dan kurum bilgisini çek
-        kurum_url = None
-        kurum_adi = None
-        try:
-            with open('kurumlar.json', 'r', encoding='utf-8') as f:
-                kurumlar_data = json.load(f)
-                kurumlar_list = kurumlar_data.get('kurumlar', [])
-                for kurum in kurumlar_list:
-                    if kurum.get('id') == req.id:
-                        kurum_url = kurum.get('url')
-                        kurum_adi = kurum.get('kurum_adi', 'Bilinmeyen Kurum')
-                        break
-                
-                if not kurum_url:
-                    return ScrapeResponse(
-                        success=False,
-                        message=f"Kurum ID '{req.id}' kurumlar.json dosyasında bulunamadı",
-                        data={
-                            "error": "KURUM_NOT_FOUND",
-                            "kurum_id": req.id,
-                            "available_kurumlar": [{"id": k.get('id'), "kurum_adi": k.get('kurum_adi')} for k in kurumlar_list]
-                        }
-                    )
-        except FileNotFoundError:
+        # Type kontrolü
+        if req.type.lower() != "kaysis":
             return ScrapeResponse(
                 success=False,
-                message="kurumlar.json dosyası bulunamadı",
-                data={"error": "FILE_NOT_FOUND"}
-            )
-        except json.JSONDecodeError as e:
-            return ScrapeResponse(
-                success=False,
-                message=f"kurumlar.json dosyası geçersiz JSON formatında: {str(e)}",
-                data={"error": "INVALID_JSON", "details": str(e)}
+                message=f"Desteklenmeyen scraper tipi: {req.type}. Şu an için sadece 'kaysis' desteklenmektedir.",
+                data={"error": "UNSUPPORTED_TYPE", "type": req.type}
             )
         
+        # MongoDB'den kurum bilgisini çek
+        kurum_adi = None
+        try:
+            client = _get_mongodb_client()
+            if client:
+                database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+                db = client[database_name]
+                kurumlar_collection = db["kurumlar"]
+                from bson import ObjectId
+                kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.id)})
+                if kurum_doc:
+                    kurum_adi = kurum_doc.get("kurum_adi", "Bilinmeyen Kurum")
+                client.close()
+        except Exception as e:
+            print(f"⚠️ MongoDB'den kurum bilgisi alınamadı: {str(e)}")
+            kurum_adi = "Bilinmeyen Kurum"
+        
         print(f"📋 Kurum: {kurum_adi}")
-        print(f"🔗 URL: {kurum_url}")
+        print(f"🔢 DETSIS: {req.detsis}")
         
         # Önce API'den yüklü documents'ları çek (çerez kullanmadan, direkt API)
         uploaded_docs = []
@@ -419,96 +308,10 @@ async def scrape_mevzuatgpt(req: PortalScanRequest):
         except Exception as e:
             print(f"⚠️ MongoDB portal listesi okunamadı: {str(e)}")
         
-        # Kurum ID'sine göre doğru scraper'ı seç
-        kurum_id = req.id
-        if kurum_id == "68bbf6df8ef4e8023c19641d":  # SGK
-            all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
-            print_sgk_results(all_sections, stats)
-        elif kurum_id == "68d7c697f087b8dfc4effcdc":  # Adalet Bakanlığı
-            all_sections, stats = scrape_adalet_bakanligi_mevzuat(url=kurum_url)
-            print_adalet_results(all_sections, stats)
-        elif kurum_id == "68d937dd2db1b7f69a79a80d":  # Aile ve Sosyal Hizmetler Bakanlığı
-            all_sections, stats = scrape_aile_sosyal_hizmetler_mevzuat(url=kurum_url)
-            print_aile_sosyal_results(all_sections, stats)
-        elif kurum_id == "68d947492db1b7f69a79a855":  # Çalışma ve Sosyal Güvenlik Bakanlığı
-            all_sections, stats = scrape_calisma_sosyal_guvenlik_mevzuat(url=kurum_url)
-            print_calisma_sosyal_results(all_sections, stats)
-        elif kurum_id == "68d94b822db1b7f69a79a861":  # Çevre, Şehircilik ve İklim Değişikliği Bakanlığı
-            all_sections, stats = scrape_cevre_sehircilik_iklim_mevzuat(url=kurum_url)
-            print_cevre_sehircilik_results(all_sections, stats)
-        elif kurum_id == "68bd76d0f639e817a373d15e":  # Türkiye İş Kurumu
-            all_sections, stats = scrape_turkiye_is_kurumu_mevzuat(url=kurum_url)
-            print_turkiye_is_kurumu_results(all_sections, stats)
-        elif kurum_id == "68d937162db1b7f69a79a804":  # Adli Tıp Kurumu
-            all_sections, stats = scrape_adli_tip_kurumu_mevzuat(url=kurum_url)
-            print_adli_tip_kurumu_results(all_sections, stats)
-        elif kurum_id == "68d937822db1b7f69a79a80a":  # Ahiler Kalkınma Ajansı
-            all_sections, stats = scrape_ahiler_kalkinma_ajansi_mevzuat(url=kurum_url)
-            print_ahiler_kalkinma_results(all_sections, stats)
-        elif kurum_id == "68d936a22db1b7f69a79a801":  # Afet ve Acil Durum Yönetimi Başkanlığı
-            all_sections, stats = scrape_afet_acil_durum_mevzuat(url=kurum_url)
-            print_afet_acil_durum_results(all_sections, stats)
-        elif kurum_id == "68d9386c2db1b7f69a79a810":  # Akaryakıt İkmal ve Nato Pol Tesisleri İşletme (ANT) Başkanlığı
-            all_sections, stats = scrape_ant_baskanligi_mevzuat(url=kurum_url)
-            print_ant_baskanligi_results(all_sections, stats)
-        elif kurum_id == "68d938da2db1b7f69a79a813":  # Anayasa Mahkemesi Başkanlığı
-            all_sections, stats = scrape_anayasa_mahkemesi_mevzuat(url=kurum_url)
-            print_anayasa_mahkemesi_results(all_sections, stats)
-        elif kurum_id == "68d93a0b2db1b7f69a79a819":  # Ankara Kalkınma Ajansı
-            all_sections, stats = scrape_ankara_kalkinma_ajansi_mevzuat(url=kurum_url)
-            print_ankara_kalkinma_results(all_sections, stats)
-        elif kurum_id == "68d93c762db1b7f69a79a822":  # Atatürk Kültür, Dil ve Tarih Yüksek Kurumu Başkanlığı
-            all_sections, stats = scrape_ataturk_kultur_dil_tarih_mevzuat(url=kurum_url)
-            print_ataturk_kultur_dil_tarih_results(all_sections, stats)
-        elif kurum_id == "68d93cb92db1b7f69a79a825":  # Atatürk Orman Çiftliği Müdürlüğü
-            all_sections, stats = scrape_ataturk_orman_ciftligi_mevzuat(url=kurum_url)
-            print_ataturk_orman_ciftligi_results(all_sections, stats)
-        elif kurum_id == "68d93d4c2db1b7f69a79a82e":  # Avrupa Birliği Başkanlığı
-            all_sections, stats = scrape_avrupa_birligi_mevzuat(url=kurum_url)
-            print_avrupa_birligi_results(all_sections, stats)
-        elif kurum_id == "68d93dac2db1b7f69a79a831":  # Avrupa Birliği Eğitim ve Gençlik Programları Merkezi Başkanlığı
-            all_sections, stats = scrape_avrupa_birligi_egitim_genclik_mevzuat(url=kurum_url)
-            print_avrupa_birligi_egitim_genclik_results(all_sections, stats)
-        elif kurum_id == "68d93ea22db1b7f69a79a834":  # Bankacılık Düzenleme ve Denetleme Kurumu
-            all_sections, stats = scrape_bankacilik_duzenleme_denetleme_mevzuat(url=kurum_url)
-            print_bankacilik_duzenleme_denetleme_results(all_sections, stats)
-        elif kurum_id == "68d93f8a2db1b7f69a79a83a":  # Basın İlan Kurumu
-            all_sections, stats = scrape_basin_ilan_kurumu_mevzuat(url=kurum_url)
-            print_basin_ilan_kurumu_results(all_sections, stats)
-        elif kurum_id == "68d9400a2db1b7f69a79a83d":  # Batı Akdeniz Kalkınma Ajansı
-            all_sections, stats = scrape_bati_akdeniz_kalkinma_ajansi_mevzuat(url=kurum_url)
-            print_bati_akdeniz_kalkinma_ajansi_results(all_sections, stats)
-        elif kurum_id == "68d940d62db1b7f69a79a840":  # Bilgi Teknolojileri ve İletişim Kurumu
-            all_sections, stats = scrape_bilgi_teknolojileri_iletisim_kurumu_mevzuat(url=kurum_url)
-            print_bilgi_teknolojileri_iletisim_kurumu_results(all_sections, stats)
-        elif kurum_id == "68d941e32db1b7f69a79a843":  # Boru Hatları İle Petrol Taşıma A.Ş. Genel Müdürlüğü
-            all_sections, stats = scrape_boru_hatlari_petrol_tasima_mevzuat(url=kurum_url)
-            print_boru_hatlari_petrol_tasima_results(all_sections, stats)
-        elif kurum_id == "68d942e02db1b7f69a79a849":  # Bursa Eskişehir Bilecik Kalkınma Ajansı
-            all_sections, stats = scrape_bursa_eskisehir_bilecik_kalkinma_ajansi_mevzuat(url=kurum_url)
-            print_bursa_eskisehir_bilecik_kalkinma_ajansi_results(all_sections, stats)
-        elif kurum_id == "68d9435b2db1b7f69a79a84c":  # Cumhurbaşkanlığı
-            all_sections, stats = scrape_cumhurbaskanligi_mevzuat(url=kurum_url)
-            print_cumhurbaskanligi_results(all_sections, stats)
-        elif kurum_id == "68d946832db1b7f69a79a852":  # Cumhurbaşkanlığı Yatırım ve Finans Ofisi
-            all_sections, stats = scrape_cumhurbaskanligi_yatirim_finans_ofisi_mevzuat(url=kurum_url)
-            print_cumhurbaskanligi_yatirim_finans_ofisi_results(all_sections, stats)
-        elif kurum_id == "68d949c22db1b7f69a79a858":  # Çalışma ve Sosyal Güvenlik Eğitim ve Araştırma Merkezi (ÇASGEM)
-            all_sections, stats = scrape_calisma_sosyal_guvenlik_egitim_arastirma_merkezi_mevzuat(url=kurum_url)
-            print_calisma_sosyal_guvenlik_egitim_arastirma_merkezi_results(all_sections, stats)
-        elif kurum_id == "68d94a5a2db1b7f69a79a85b":  # Çanakkale Savaşları Gelibolu Tarihi Alan Başkanlığı
-            all_sections, stats = scrape_canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_mevzuat(url=kurum_url)
-            print_canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_results(all_sections, stats)
-        elif kurum_id == "68d94b2e2db1b7f69a79a85e":  # Çay İşletmeleri Genel Müdürlüğü
-            all_sections, stats = scrape_cay_isletmeleri_genel_mudurlugu_mevzuat(url=kurum_url)
-            print_cay_isletmeleri_genel_mudurlugu_results(all_sections, stats)
-        elif kurum_id == "68d94c8b2db1b7f69a79a864":  # Çukurova Kalkınma Ajansı
-            all_sections, stats = scrape_cukurova_kalkinma_ajansi_mevzuat(url=kurum_url)
-            print_cukurova_kalkinma_ajansi_results(all_sections, stats)
-        else:
-            # Varsayılan olarak SGK scraper'ını kullan
-            all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
-            print_sgk_results(all_sections, stats)
+        # KAYSİS scraper'ı kullan
+        if req.type.lower() == "kaysis":
+            all_sections, stats = scrape_kaysis_mevzuat(detsis=req.detsis)
+            print_results_to_console(all_sections, stats)
         
         # Response hazırla (benzersiz item id'leri, uploaded durumu ve bölüm başlık temizleme)
         item_id_counter = 1
@@ -635,52 +438,40 @@ async def scrape_kurum_portal(req: PortalScanRequest):
     """
     Belirtilen kurumun mevzuatlarını tarar ve MongoDB metadata koleksiyonundaki kayıtlarla karşılaştırır.
     Portal durumunu (true/false) döner.
-    
-    Kurum bilgisi kurumlar.json dosyasından alınır.
+    type parametresi ile scraper tipi belirlenir (şu an için sadece 'kaysis' desteklenir).
     """
     try:
         print("\n" + "="*80)
-        print(f"🚀 API Endpoint'ten Kurum Portal Tarama İsteği Alındı (Kurum ID: {req.id})")
+        print(f"🚀 API Endpoint'ten Kurum Portal Tarama İsteği Alındı (Kurum ID: {req.id}, Type: {req.type})")
         print("="*80)
         
-        # kurumlar.json'dan kurum bilgisini çek
-        kurum_url = None
-        kurum_adi = None
-        try:
-            with open('kurumlar.json', 'r', encoding='utf-8') as f:
-                kurumlar_data = json.load(f)
-                kurumlar_list = kurumlar_data.get('kurumlar', [])
-                for kurum in kurumlar_list:
-                    if kurum.get('id') == req.id:
-                        kurum_url = kurum.get('url')
-                        kurum_adi = kurum.get('kurum_adi', 'Bilinmeyen Kurum')
-                        break
-                
-                if not kurum_url:
-                    return ScrapeResponse(
-                        success=False,
-                        message=f"Kurum ID '{req.id}' kurumlar.json dosyasında bulunamadı",
-                        data={
-                            "error": "KURUM_NOT_FOUND",
-                            "kurum_id": req.id,
-                            "available_kurumlar": [{"id": k.get('id'), "kurum_adi": k.get('kurum_adi')} for k in kurumlar_list]
-                        }
-                    )
-        except FileNotFoundError:
+        # Type kontrolü
+        if req.type.lower() != "kaysis":
             return ScrapeResponse(
                 success=False,
-                message="kurumlar.json dosyası bulunamadı",
-                data={"error": "FILE_NOT_FOUND"}
-            )
-        except json.JSONDecodeError as e:
-            return ScrapeResponse(
-                success=False,
-                message=f"kurumlar.json dosyası geçersiz JSON formatında: {str(e)}",
-                data={"error": "INVALID_JSON", "details": str(e)}
+                message=f"Desteklenmeyen scraper tipi: {req.type}. Şu an için sadece 'kaysis' desteklenmektedir.",
+                data={"error": "UNSUPPORTED_TYPE", "type": req.type}
             )
         
+        # MongoDB'den kurum bilgisini çek
+        kurum_adi = None
+        try:
+            client = _get_mongodb_client()
+            if client:
+                database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+                db = client[database_name]
+                kurumlar_collection = db["kurumlar"]
+                from bson import ObjectId
+                kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.id)})
+                if kurum_doc:
+                    kurum_adi = kurum_doc.get("kurum_adi", "Bilinmeyen Kurum")
+                client.close()
+        except Exception as e:
+            print(f"⚠️ MongoDB'den kurum bilgisi alınamadı: {str(e)}")
+            kurum_adi = "Bilinmeyen Kurum"
+        
         print(f"📋 Kurum: {kurum_adi}")
-        print(f"🔗 URL: {kurum_url}")
+        print(f"🔢 DETSIS: {req.detsis}")
         
         # MongoDB'den portal'da bulunan pdf_adi'ları çek
         portal_title_set = set()
@@ -704,96 +495,10 @@ async def scrape_kurum_portal(req: PortalScanRequest):
         except Exception as e:
             print(f"⚠️ MongoDB portal listesi okunamadı: {str(e)}")
         
-        # Kurum ID'sine göre doğru scraper'ı seç
-        kurum_id = req.id
-        if kurum_id == "68bbf6df8ef4e8023c19641d":  # SGK
-            all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
-            print_sgk_results(all_sections, stats)
-        elif kurum_id == "68d7c697f087b8dfc4effcdc":  # Adalet Bakanlığı
-            all_sections, stats = scrape_adalet_bakanligi_mevzuat(url=kurum_url)
-            print_adalet_results(all_sections, stats)
-        elif kurum_id == "68d937dd2db1b7f69a79a80d":  # Aile ve Sosyal Hizmetler Bakanlığı
-            all_sections, stats = scrape_aile_sosyal_hizmetler_mevzuat(url=kurum_url)
-            print_aile_sosyal_results(all_sections, stats)
-        elif kurum_id == "68d947492db1b7f69a79a855":  # Çalışma ve Sosyal Güvenlik Bakanlığı
-            all_sections, stats = scrape_calisma_sosyal_guvenlik_mevzuat(url=kurum_url)
-            print_calisma_sosyal_results(all_sections, stats)
-        elif kurum_id == "68d94b822db1b7f69a79a861":  # Çevre, Şehircilik ve İklim Değişikliği Bakanlığı
-            all_sections, stats = scrape_cevre_sehircilik_iklim_mevzuat(url=kurum_url)
-            print_cevre_sehircilik_results(all_sections, stats)
-        elif kurum_id == "68bd76d0f639e817a373d15e":  # Türkiye İş Kurumu
-            all_sections, stats = scrape_turkiye_is_kurumu_mevzuat(url=kurum_url)
-            print_turkiye_is_kurumu_results(all_sections, stats)
-        elif kurum_id == "68d937162db1b7f69a79a804":  # Adli Tıp Kurumu
-            all_sections, stats = scrape_adli_tip_kurumu_mevzuat(url=kurum_url)
-            print_adli_tip_kurumu_results(all_sections, stats)
-        elif kurum_id == "68d937822db1b7f69a79a80a":  # Ahiler Kalkınma Ajansı
-            all_sections, stats = scrape_ahiler_kalkinma_ajansi_mevzuat(url=kurum_url)
-            print_ahiler_kalkinma_results(all_sections, stats)
-        elif kurum_id == "68d936a22db1b7f69a79a801":  # Afet ve Acil Durum Yönetimi Başkanlığı
-            all_sections, stats = scrape_afet_acil_durum_mevzuat(url=kurum_url)
-            print_afet_acil_durum_results(all_sections, stats)
-        elif kurum_id == "68d9386c2db1b7f69a79a810":  # Akaryakıt İkmal ve Nato Pol Tesisleri İşletme (ANT) Başkanlığı
-            all_sections, stats = scrape_ant_baskanligi_mevzuat(url=kurum_url)
-            print_ant_baskanligi_results(all_sections, stats)
-        elif kurum_id == "68d938da2db1b7f69a79a813":  # Anayasa Mahkemesi Başkanlığı
-            all_sections, stats = scrape_anayasa_mahkemesi_mevzuat(url=kurum_url)
-            print_anayasa_mahkemesi_results(all_sections, stats)
-        elif kurum_id == "68d93a0b2db1b7f69a79a819":  # Ankara Kalkınma Ajansı
-            all_sections, stats = scrape_ankara_kalkinma_ajansi_mevzuat(url=kurum_url)
-            print_ankara_kalkinma_results(all_sections, stats)
-        elif kurum_id == "68d93c762db1b7f69a79a822":  # Atatürk Kültür, Dil ve Tarih Yüksek Kurumu Başkanlığı
-            all_sections, stats = scrape_ataturk_kultur_dil_tarih_mevzuat(url=kurum_url)
-            print_ataturk_kultur_dil_tarih_results(all_sections, stats)
-        elif kurum_id == "68d93cb92db1b7f69a79a825":  # Atatürk Orman Çiftliği Müdürlüğü
-            all_sections, stats = scrape_ataturk_orman_ciftligi_mevzuat(url=kurum_url)
-            print_ataturk_orman_ciftligi_results(all_sections, stats)
-        elif kurum_id == "68d93d4c2db1b7f69a79a82e":  # Avrupa Birliği Başkanlığı
-            all_sections, stats = scrape_avrupa_birligi_mevzuat(url=kurum_url)
-            print_avrupa_birligi_results(all_sections, stats)
-        elif kurum_id == "68d93dac2db1b7f69a79a831":  # Avrupa Birliği Eğitim ve Gençlik Programları Merkezi Başkanlığı
-            all_sections, stats = scrape_avrupa_birligi_egitim_genclik_mevzuat(url=kurum_url)
-            print_avrupa_birligi_egitim_genclik_results(all_sections, stats)
-        elif kurum_id == "68d93ea22db1b7f69a79a834":  # Bankacılık Düzenleme ve Denetleme Kurumu
-            all_sections, stats = scrape_bankacilik_duzenleme_denetleme_mevzuat(url=kurum_url)
-            print_bankacilik_duzenleme_denetleme_results(all_sections, stats)
-        elif kurum_id == "68d93f8a2db1b7f69a79a83a":  # Basın İlan Kurumu
-            all_sections, stats = scrape_basin_ilan_kurumu_mevzuat(url=kurum_url)
-            print_basin_ilan_kurumu_results(all_sections, stats)
-        elif kurum_id == "68d9400a2db1b7f69a79a83d":  # Batı Akdeniz Kalkınma Ajansı
-            all_sections, stats = scrape_bati_akdeniz_kalkinma_ajansi_mevzuat(url=kurum_url)
-            print_bati_akdeniz_kalkinma_ajansi_results(all_sections, stats)
-        elif kurum_id == "68d940d62db1b7f69a79a840":  # Bilgi Teknolojileri ve İletişim Kurumu
-            all_sections, stats = scrape_bilgi_teknolojileri_iletisim_kurumu_mevzuat(url=kurum_url)
-            print_bilgi_teknolojileri_iletisim_kurumu_results(all_sections, stats)
-        elif kurum_id == "68d941e32db1b7f69a79a843":  # Boru Hatları İle Petrol Taşıma A.Ş. Genel Müdürlüğü
-            all_sections, stats = scrape_boru_hatlari_petrol_tasima_mevzuat(url=kurum_url)
-            print_boru_hatlari_petrol_tasima_results(all_sections, stats)
-        elif kurum_id == "68d942e02db1b7f69a79a849":  # Bursa Eskişehir Bilecik Kalkınma Ajansı
-            all_sections, stats = scrape_bursa_eskisehir_bilecik_kalkinma_ajansi_mevzuat(url=kurum_url)
-            print_bursa_eskisehir_bilecik_kalkinma_ajansi_results(all_sections, stats)
-        elif kurum_id == "68d9435b2db1b7f69a79a84c":  # Cumhurbaşkanlığı
-            all_sections, stats = scrape_cumhurbaskanligi_mevzuat(url=kurum_url)
-            print_cumhurbaskanligi_results(all_sections, stats)
-        elif kurum_id == "68d946832db1b7f69a79a852":  # Cumhurbaşkanlığı Yatırım ve Finans Ofisi
-            all_sections, stats = scrape_cumhurbaskanligi_yatirim_finans_ofisi_mevzuat(url=kurum_url)
-            print_cumhurbaskanligi_yatirim_finans_ofisi_results(all_sections, stats)
-        elif kurum_id == "68d949c22db1b7f69a79a858":  # Çalışma ve Sosyal Güvenlik Eğitim ve Araştırma Merkezi (ÇASGEM)
-            all_sections, stats = scrape_calisma_sosyal_guvenlik_egitim_arastirma_merkezi_mevzuat(url=kurum_url)
-            print_calisma_sosyal_guvenlik_egitim_arastirma_merkezi_results(all_sections, stats)
-        elif kurum_id == "68d94a5a2db1b7f69a79a85b":  # Çanakkale Savaşları Gelibolu Tarihi Alan Başkanlığı
-            all_sections, stats = scrape_canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_mevzuat(url=kurum_url)
-            print_canakkale_savaslari_gelibolu_tarihi_alan_baskanligi_results(all_sections, stats)
-        elif kurum_id == "68d94b2e2db1b7f69a79a85e":  # Çay İşletmeleri Genel Müdürlüğü
-            all_sections, stats = scrape_cay_isletmeleri_genel_mudurlugu_mevzuat(url=kurum_url)
-            print_cay_isletmeleri_genel_mudurlugu_results(all_sections, stats)
-        elif kurum_id == "68d94c8b2db1b7f69a79a864":  # Çukurova Kalkınma Ajansı
-            all_sections, stats = scrape_cukurova_kalkinma_ajansi_mevzuat(url=kurum_url)
-            print_cukurova_kalkinma_ajansi_results(all_sections, stats)
-        else:
-            # Varsayılan olarak SGK scraper'ını kullan
-            all_sections, stats = scrape_sgk_mevzuat(url=kurum_url)
-            print_sgk_results(all_sections, stats)
+        # KAYSİS scraper'ı kullan
+        if req.type.lower() == "kaysis":
+            all_sections, stats = scrape_kaysis_mevzuat(detsis=req.detsis)
+            print_results_to_console(all_sections, stats)
         
         # Response hazırla (benzersiz item id'leri, portal durumu ve bölüm başlık temizleme)
         item_id_counter = 1
@@ -991,6 +696,91 @@ async def update_content_by_metadata(metadata_id: str, body: Dict[str, Any]):
         if res.matched_count == 0:
             raise HTTPException(status_code=404, detail="Content bulunamadı")
         return {"success": True, "modified": res.modified_count}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hata: {str(e)}")
+
+
+@app.delete("/api/mongo/metadata/{id}", tags=["MongoDB"], summary="Portal içeriğini sil (Metadata, Content ve Bunny.net PDF)")
+async def delete_portal_content(id: str):
+    """
+    Portal içeriğini tamamen siler:
+    1. MongoDB metadata kaydını siler
+    2. MongoDB content kaydını siler (metadata_id ile ilişkili)
+    3. Bunny.net'teki PDF dosyasını siler (pdf_url'den)
+    
+    NOT: Bu işlem sadece portal için geçerlidir, MevzuatGPT'yi etkilemez.
+    """
+    try:
+        client, metadata_col, content_col = _get_mongo_collections()
+        if not client:
+            raise HTTPException(status_code=500, detail="MongoDB bağlantısı kurulamadı")
+        
+        try:
+            # Önce metadata kaydını bul
+            metadata_doc = metadata_col.find_one({"_id": ObjectId(id)})
+            if not metadata_doc:
+                client.close()
+                raise HTTPException(status_code=404, detail="Metadata bulunamadı")
+            
+            # pdf_url'i al (Bunny.net'ten silmek için)
+            pdf_url = metadata_doc.get("pdf_url", "")
+            
+            print(f"🗑️ Portal içeriği siliniyor: metadata_id={id}")
+            print(f"📄 PDF URL: {pdf_url}")
+            
+            # 1. Content kaydını sil (metadata_id ile ilişkili)
+            content_result = content_col.delete_one({"metadata_id": ObjectId(id)})
+            if content_result.deleted_count > 0:
+                print(f"✅ Content kaydı silindi: {content_result.deleted_count} kayıt")
+            else:
+                print("⚠️ Content kaydı bulunamadı (zaten silinmiş olabilir)")
+            
+            # 2. Metadata kaydını sil
+            metadata_result = metadata_col.delete_one({"_id": ObjectId(id)})
+            if metadata_result.deleted_count == 0:
+                client.close()
+                raise HTTPException(status_code=404, detail="Metadata silinemedi (kayıt bulunamadı)")
+            
+            print(f"✅ Metadata kaydı silindi: {metadata_result.deleted_count} kayıt")
+            
+            # 3. Bunny.net'ten PDF'i sil
+            bunny_deleted = False
+            if pdf_url:
+                bunny_deleted = _delete_from_bunny(pdf_url)
+            else:
+                print("⚠️ PDF URL bulunamadı, Bunny.net silme işlemi atlandı")
+            
+            client.close()
+            
+            # Sonuç mesajı
+            result_message = f"Portal içeriği başarıyla silindi. Metadata: ✅, Content: ✅"
+            if pdf_url:
+                if bunny_deleted:
+                    result_message += ", Bunny.net PDF: ✅"
+                else:
+                    result_message += ", Bunny.net PDF: ⚠️ (silme başarısız veya dosya bulunamadı)"
+            
+            return {
+                "success": True,
+                "message": result_message,
+                "deleted": {
+                    "metadata": metadata_result.deleted_count,
+                    "content": content_result.deleted_count,
+                    "bunny_pdf": bunny_deleted
+                }
+            }
+            
+        except HTTPException:
+            client.close()
+            raise
+        except Exception as e:
+            client.close()
+            if "invalid" in str(e).lower() or "objectid" in str(e).lower():
+                raise HTTPException(status_code=400, detail="Geçersiz metadata _id")
+            raise HTTPException(status_code=500, detail=f"Silme işlemi sırasında hata: {str(e)}")
+            
     except HTTPException:
         raise
     except Exception as e:
@@ -2091,6 +1881,80 @@ def _upload_logo_to_bunny(file_data: bytes, filename: str, content_type: str) ->
         return None
 
 
+def _delete_from_bunny(pdf_url: str) -> bool:
+    """Bunny.net'ten PDF dosyasını siler"""
+    try:
+        if not pdf_url or not pdf_url.strip():
+            print("⚠️ PDF URL boş, silme işlemi atlandı")
+            return False
+        
+        api_key = os.getenv("BUNNY_STORAGE_API_KEY")
+        storage_zone = os.getenv("BUNNY_STORAGE_ZONE", "mevzuatgpt")
+        storage_region = os.getenv("BUNNY_STORAGE_REGION", "storage.bunnycdn.com")
+        storage_endpoint = os.getenv("BUNNY_STORAGE_ENDPOINT", "https://cdn.mevzuatgpt.org")
+        storage_folder = os.getenv("BUNNY_STORAGE_FOLDER", "portal")
+        
+        if not api_key:
+            print("⚠️ Bunny.net API anahtarı bulunamadı, silme işlemi atlandı")
+            return False
+        
+        # PDF URL'den dosya adını çıkar
+        # Format: https://cdn.mevzuatgpt.org/portal/filename.pdf
+        # veya: https://cdn.mevzuatgpt.org/portal/filename%20with%20spaces.pdf
+        try:
+            # URL'den dosya adını al
+            if storage_endpoint in pdf_url:
+                # Endpoint'ten sonraki kısmı al
+                file_path = pdf_url.split(storage_endpoint, 1)[1]
+                # Başındaki /portal/ kısmını kaldır
+                if file_path.startswith(f"/{storage_folder}/"):
+                    filename = file_path[len(f"/{storage_folder}/"):]
+                else:
+                    filename = file_path.lstrip("/")
+            else:
+                # Farklı format olabilir, direkt dosya adını çıkar
+                filename = os.path.basename(pdf_url)
+            
+            if not filename:
+                print(f"⚠️ PDF URL'den dosya adı çıkarılamadı: {pdf_url}")
+                return False
+            
+            # URL decode yap (eğer encoded ise)
+            filename = urllib.parse.unquote(filename)
+            
+            # URL-safe filename (tekrar encode et)
+            safe_filename = urllib.parse.quote(filename)
+            
+            # Delete URL oluştur
+            delete_url = f"https://{storage_region}/{storage_zone}/{storage_folder}/{safe_filename}"
+            
+            headers = {
+                'AccessKey': api_key,
+                'User-Agent': 'SGK-Scraper-API/1.0'
+            }
+            
+            print(f"🗑️ Bunny.net'ten siliniyor: {filename}")
+            response = requests.delete(delete_url, headers=headers, timeout=30)
+            
+            if response.status_code == 200 or response.status_code == 204:
+                print(f"✅ PDF Bunny.net'ten başarıyla silindi: {filename}")
+                return True
+            elif response.status_code == 404:
+                print(f"⚠️ PDF Bunny.net'te bulunamadı (zaten silinmiş olabilir): {filename}")
+                return True  # Zaten yoksa başarılı say
+            else:
+                print(f"⚠️ Bunny.net silme hatası: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as parse_error:
+            print(f"⚠️ PDF URL parse hatası: {str(parse_error)}")
+            return False
+            
+    except Exception as e:
+        print(f"⚠️ Bunny.net silme hatası: {str(e)}")
+        return False
+
+
 def _get_mongodb_client() -> Optional[MongoClient]:
     """MongoDB bağlantısı oluşturur"""
     try:
@@ -2159,14 +2023,148 @@ def _extract_pdf_text_markdown(pdf_path: str) -> Optional[str]:
         from io import BytesIO
         
         extracted_text = ""
-        needs_ocr = False
+        total_pages = 0
         
+        # Önce PDF yapısını analiz et (daha doğru tespit için)
+        processor = PDFProcessor()
+        pdf_structure = processor.analyze_pdf_structure(pdf_path)
+        total_pages = pdf_structure.get('total_pages', 0)
+        text_coverage = pdf_structure.get('text_coverage', 0.0)
+        has_text = pdf_structure.get('has_text', False)
+        needs_ocr = pdf_structure.get('needs_ocr', False)
+        
+        # Resim formatı kontrolü: Eğer PDF resim formatındaysa direkt OCR ile başla
+        # %30 eşiği: Metin kapsamı düşükse kalite zayıf olabilir, OCR daha iyi sonuç verebilir
+        # Ayrıca, eğer metin varsa ama çok azsa (sadece başlıklar), OCR gerekli
+        # Ortalama sayfa başına metin miktarını kontrol et
+        avg_text_per_page = 0
+        if total_pages > 0:
+            # Hızlı kontrol: İlk 3 sayfadan ortalama metin miktarını hesapla
+            import pdfplumber
+            from io import BytesIO
+            with open(pdf_path, 'rb') as f:
+                pdf_bytes = f.read()
+            pdf_file_obj = BytesIO(pdf_bytes)
+            with pdfplumber.open(pdf_file_obj) as pdf:
+                quick_check_pages = min(3, total_pages)
+                quick_total_text = 0
+                for page_num in range(quick_check_pages):
+                    try:
+                        page = pdf.pages[page_num]
+                        page_text = page.extract_text()
+                        if page_text:
+                            quick_total_text += len(page_text.strip())
+                    except Exception:
+                        pass
+                avg_text_per_page = quick_total_text / quick_check_pages if quick_check_pages > 0 else 0
+        
+        # Eğer ortalama sayfa başına metin 300 karakterden azsa, muhtemelen sadece başlıklar var
+        is_image_pdf = not has_text or text_coverage < 0.3 or needs_ocr or (has_text and avg_text_per_page < 300)
+        
+        if is_image_pdf:
+            print(f"📸 PDF resim formatında tespit edildi (kapsam: %{text_coverage*100:.1f}). OCR ile tüm {total_pages} sayfa işleniyor (sınırlama olmadan)...")
+            try:
+                if processor._check_ocr_available():
+                    # Direkt OCR ile tüm sayfaları işle (sınırlama yok)
+                    print(f"🔄 OCR başlatılıyor: {total_pages} sayfa işlenecek...")
+                    ocr_text = processor.extract_text_from_pages(pdf_path, 1, total_pages, use_ocr=True)
+                    if ocr_text and len(ocr_text.strip()) > 0:
+                        extracted_text = _format_text_as_markdown(ocr_text)
+                        ocr_char_count = len(ocr_text)
+                        ocr_line_count = len([line for line in ocr_text.split('\n') if line.strip()])
+                        print(f"✅ OCR tamamlandı: {total_pages} sayfa işlendi, {ocr_char_count:,} karakter, {ocr_line_count:,} satır çıkarıldı")
+                        return extracted_text.strip()
+                    else:
+                        print("⚠️ OCR ile metin çıkarılamadı")
+                else:
+                    print("⚠️ OCR kütüphaneleri kurulu değil veya Poppler/Tesseract eksik")
+                    print("⚠️ Kurulum için: 'apt-get install poppler-utils tesseract-ocr tesseract-ocr-tur' (Linux)")
+                    print("⚠️ veya: 'brew install poppler tesseract tesseract-lang' (macOS)")
+            except Exception as ocr_error:
+                error_msg = str(ocr_error)
+                print(f"❌ OCR hatası: {error_msg}")
+                if "poppler" in error_msg.lower() or "pdftoppm" in error_msg.lower():
+                    print("❌ Poppler kurulu değil! 'apt-get install poppler-utils' komutunu çalıştırın.")
+                elif "tesseract" in error_msg.lower():
+                    print("❌ Tesseract kurulu değil! 'apt-get install tesseract-ocr tesseract-ocr-tur' komutunu çalıştırın.")
+                import traceback
+                traceback.print_exc()
+                return None
+        
+        # Normal metin çıkarma: PDF'de yeterli metin var
         with open(pdf_path, 'rb') as f:
             pdf_bytes = f.read()
         
         pdf_file_obj = BytesIO(pdf_bytes)
         
         with pdfplumber.open(pdf_file_obj) as pdf:
+            if total_pages == 0:
+                total_pages = len(pdf.pages)
+            
+            # Hızlı kontrol: İlk 3 sayfadan metin çıkar
+            quick_check_pages = min(3, total_pages)
+            total_text_length = 0
+            pages_with_text = 0
+            
+            for page_num in range(quick_check_pages):
+                try:
+                    page = pdf.pages[page_num]
+                    page_text = page.extract_text()
+                    if page_text and len(page_text.strip()) > 10:
+                        total_text_length += len(page_text.strip())
+                        pages_with_text += 1
+                except Exception:
+                    pass
+            
+            # Metin kapsamını hesapla (ilk 3 sayfadan)
+            quick_coverage = pages_with_text / quick_check_pages if quick_check_pages > 0 else 0.0
+            
+            # Resim formatı kontrolü: Eğer ilk 3 sayfada hiç metin yoksa, çok az metin varsa 
+            # veya metin kapsamı %30'dan azsa veya toplam metin çok azsa direkt OCR ile tüm sayfaları işle
+            # %30 eşiği: Metin kapsamı düşükse kalite zayıf olabilir, OCR daha iyi sonuç verebilir
+            # Ayrıca, eğer metin varsa ama çok azsa (1000 karakterden az), bu da resim formatı olabilir
+            should_use_ocr_directly = (
+                pages_with_text == 0 or 
+                (pages_with_text < 2 and total_text_length < 500) or
+                quick_coverage < 0.3 or
+                (pages_with_text > 0 and total_text_length < 1000)  # Metin var ama çok az
+            )
+            
+            if should_use_ocr_directly:
+                print(f"📸 PDF resim formatında tespit edildi (ilk {quick_check_pages} sayfada kapsam: %{quick_coverage*100:.1f}, metin: {pages_with_text}/{quick_check_pages} sayfa). OCR ile tüm {total_pages} sayfa işleniyor (sınırlama olmadan)...")
+                try:
+                    processor = PDFProcessor()
+                    if processor._check_ocr_available():
+                        # Direkt OCR ile tüm sayfaları işle (sınırlama yok)
+                        print(f"🔄 OCR başlatılıyor: {total_pages} sayfa işlenecek...")
+                        ocr_text = processor.extract_text_from_pages(pdf_path, 1, total_pages, use_ocr=True)
+                        if ocr_text and len(ocr_text.strip()) > 0:
+                            extracted_text = _format_text_as_markdown(ocr_text)
+                            ocr_char_count = len(ocr_text)
+                            ocr_line_count = len([line for line in ocr_text.split('\n') if line.strip()])
+                            print(f"✅ OCR tamamlandı: {total_pages} sayfa işlendi, {ocr_char_count:,} karakter, {ocr_line_count:,} satır çıkarıldı")
+                            return extracted_text.strip()
+                        else:
+                            print("⚠️ OCR ile metin çıkarılamadı")
+                    else:
+                        print("⚠️ OCR kütüphaneleri kurulu değil veya Poppler/Tesseract eksik")
+                        print("⚠️ Kurulum için: 'apt-get install poppler-utils tesseract-ocr tesseract-ocr-tur' (Linux)")
+                        print("⚠️ veya: 'brew install poppler tesseract tesseract-lang' (macOS)")
+                except Exception as ocr_error:
+                    error_msg = str(ocr_error)
+                    print(f"❌ OCR hatası: {error_msg}")
+                    if "poppler" in error_msg.lower() or "pdftoppm" in error_msg.lower():
+                        print("❌ Poppler kurulu değil! 'apt-get install poppler-utils' komutunu çalıştırın.")
+                    elif "tesseract" in error_msg.lower():
+                        print("❌ Tesseract kurulu değil! 'apt-get install tesseract-ocr tesseract-ocr-tur' komutunu çalıştırın.")
+                    import traceback
+                    traceback.print_exc()
+                    return None
+            
+            # Normal metin çıkarma: Tüm sayfaları işle (metin kapsamı yeterliyse)
+            total_text_length = 0
+            pages_with_text = 0
+            
             for page_num, page in enumerate(pdf.pages, 1):
                 try:
                     page_text = page.extract_text()
@@ -2174,31 +2172,79 @@ def _extract_pdf_text_markdown(pdf_path: str) -> Optional[str]:
                         # Basit markdown formatı
                         formatted_text = _format_text_as_markdown(page_text)
                         extracted_text += formatted_text + "\n\n"
+                        total_text_length += len(page_text.strip())
+                        pages_with_text += 1
                     else:
-                        needs_ocr = True
+                        # Metin yoksa OCR ile dene
+                        processor = PDFProcessor()
+                        if processor._check_ocr_available():
+                            try:
+                                ocr_text = processor._extract_text_with_ocr(pdf_path, page_num - 1)
+                                if ocr_text and len(ocr_text.strip()) > 0:
+                                    formatted_text = _format_text_as_markdown(ocr_text)
+                                    extracted_text += formatted_text + "\n\n"
+                                    total_text_length += len(ocr_text.strip())
+                                    pages_with_text += 1
+                            except Exception:
+                                pass
                 except Exception as page_error:
-                    needs_ocr = True
+                    # Sayfa hatası varsa OCR ile dene
+                    processor = PDFProcessor()
+                    if processor._check_ocr_available():
+                        try:
+                            ocr_text = processor._extract_text_with_ocr(pdf_path, page_num - 1)
+                            if ocr_text and len(ocr_text.strip()) > 0:
+                                formatted_text = _format_text_as_markdown(ocr_text)
+                                extracted_text += formatted_text + "\n\n"
+                        except Exception:
+                            pass
                     continue
         
-        # Eğer metin yoksa OCR ile dene
-        if (not extracted_text.strip() or needs_ocr) and len(pdf.pages) > 0:
-            print("📸 PDF'de metin bulunamadı, OCR ile metin çıkarılıyor...")
+            # Metin kapsamını kontrol et: Eğer %30'dan az sayfa metin içeriyorsa veya toplam metin çok azsa OCR kullan
+            # %30 eşiği: Metin kapsamı düşükse kalite zayıf olabilir, OCR daha iyi sonuç verebilir
+            text_coverage = pages_with_text / total_pages if total_pages > 0 else 0.0
+            should_use_ocr = text_coverage < 0.3 or total_text_length < 1000
+        
+        # Eğer metin yetersizse OCR ile tüm sayfaları işle
+        if should_use_ocr and total_pages > 0:
+            print(f"📸 PDF'de metin bulunamadı veya yetersiz (kapsam: %{text_coverage*100:.1f}, toplam: {total_text_length} karakter), OCR ile tüm {total_pages} sayfa işleniyor...")
             try:
                 processor = PDFProcessor()
                 if processor._check_ocr_available():
-                    ocr_text = processor.extract_text_from_pages(pdf_path, 1, len(pdf.pages), use_ocr=True)
-                    if ocr_text:
+                    # Tüm sayfalar için OCR yap (use_ocr=True ile zorunlu OCR)
+                    # end_page dahil olacak şekilde total_pages kullan
+                    print(f"🔄 OCR başlatılıyor: {total_pages} sayfa işlenecek...")
+                    ocr_text = processor.extract_text_from_pages(pdf_path, 1, total_pages, use_ocr=True)
+                    if ocr_text and len(ocr_text.strip()) > 100:
                         extracted_text = _format_text_as_markdown(ocr_text)
-                        print("✅ OCR ile metin başarıyla çıkarıldı")
+                        ocr_char_count = len(ocr_text)
+                        ocr_line_count = len([line for line in ocr_text.split('\n') if line.strip()])
+                        print(f"✅ OCR tamamlandı: {total_pages} sayfa işlendi, {ocr_char_count:,} karakter, {ocr_line_count:,} satır çıkarıldı")
+                    else:
+                        print("⚠️ OCR ile metin çıkarılamadı veya çok az metin çıkarıldı")
+                        if ocr_text:
+                            print(f"⚠️ Çıkarılan metin uzunluğu: {len(ocr_text)} karakter (çok kısa)")
                 else:
-                    print("⚠️ OCR kütüphaneleri kurulu değil")
+                    print("⚠️ OCR kütüphaneleri kurulu değil veya Poppler/Tesseract eksik")
+                    print("⚠️ Kurulum için: 'apt-get install poppler-utils tesseract-ocr tesseract-ocr-tur' (Linux)")
+                    print("⚠️ veya: 'brew install poppler tesseract tesseract-lang' (macOS)")
             except Exception as ocr_error:
-                print(f"⚠️ OCR hatası: {str(ocr_error)}")
+                error_msg = str(ocr_error)
+                print(f"❌ OCR hatası: {error_msg}")
+                # Poppler veya Tesseract eksikse özel mesaj
+                if "poppler" in error_msg.lower() or "pdftoppm" in error_msg.lower():
+                    print("❌ Poppler kurulu değil! 'apt-get install poppler-utils' komutunu çalıştırın.")
+                elif "tesseract" in error_msg.lower():
+                    print("❌ Tesseract kurulu değil! 'apt-get install tesseract-ocr tesseract-ocr-tur' komutunu çalıştırın.")
+                import traceback
+                traceback.print_exc()
         
         return extracted_text.strip() if extracted_text.strip() else None
         
     except Exception as e:
         print(f"PDF metin çıkarma hatası: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -2252,13 +2298,52 @@ def _format_text_as_markdown(text: str) -> str:
 def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Optional[str]) -> Dict[str, Any]:
     """Streamlit'e bağlı olmadan analiz ve metadata üretimini yapar."""
     processor = PDFProcessor()
-    total_pages = processor.analyze_pdf_structure(pdf_path)['total_pages']
-
+    pdf_structure = processor.analyze_pdf_structure(pdf_path)
+    total_pages = pdf_structure['total_pages']
+    
+    # Resim formatı kontrolü: Eğer PDF resim formatındaysa direkt OCR ile başla
+    text_coverage = pdf_structure.get('text_coverage', 0.0)
+    has_text = pdf_structure.get('has_text', False)
+    needs_ocr = pdf_structure.get('needs_ocr', False)
+    
+    # Ortalama sayfa başına metin miktarını kontrol et (sadece başlıklar mı yoksa gerçek içerik mi?)
+    avg_text_per_page = 0
+    if total_pages > 0:
+        # Hızlı kontrol: İlk 3 sayfadan ortalama metin miktarını hesapla
+        import pdfplumber
+        from io import BytesIO
+        with open(pdf_path, 'rb') as f:
+            pdf_bytes = f.read()
+        pdf_file_obj = BytesIO(pdf_bytes)
+        with pdfplumber.open(pdf_file_obj) as pdf:
+            quick_check_pages = min(3, total_pages)
+            quick_total_text = 0
+            for page_num in range(quick_check_pages):
+                try:
+                    page = pdf.pages[page_num]
+                    page_text = page.extract_text()
+                    if page_text:
+                        quick_total_text += len(page_text.strip())
+                except Exception:
+                    pass
+            avg_text_per_page = quick_total_text / quick_check_pages if quick_check_pages > 0 else 0
+    
+    # Resim formatı: Metin yoksa veya çok az metin varsa (%30'dan az) veya OCR gerekliyse
+    # %30 eşiği: Metin kapsamı düşükse kalite zayıf olabilir, OCR daha iyi sonuç verebilir
+    # Ayrıca, eğer metin varsa ama çok azsa (sadece başlıklar), OCR gerekli
+    is_image_pdf = not has_text or text_coverage < 0.3 or needs_ocr or (has_text and avg_text_per_page < 300)
+    
+    use_ocr = is_image_pdf  # Resim formatındaysa OCR kullan
+    
+    if is_image_pdf:
+        print(f"📸 PDF resim formatında tespit edildi (kapsam: %{text_coverage*100:.1f}, ortalama: {avg_text_per_page:.0f} karakter/sayfa). OCR ile tüm {total_pages} sayfa işlenecek (sınırlama olmadan)...")
+    
     use_ai = bool(api_key)
     if use_ai:
         analyzer = DeepSeekAnalyzer(api_key)
         try:
-            sections = processor.create_intelligent_sections(pdf_path, total_pages, analyzer)
+            # OCR modunda da intelligent sections kullanabiliriz (use_ocr parametresi ile)
+            sections = processor.create_intelligent_sections(pdf_path, total_pages, analyzer, use_ocr=use_ocr)
         except Exception:
             sections = processor.create_optimal_sections(pdf_path, total_pages, 3, 10)
     else:
@@ -2269,10 +2354,9 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
         analyzer = DeepSeekAnalyzer(api_key)
     else:
         analyzer = None  # type: ignore
-
-    # PDF'de metin var mı kontrol et, yoksa OCR kullan
-    pdf_structure = processor.analyze_pdf_structure(pdf_path)
-    use_ocr = pdf_structure.get('needs_ocr', False) or not pdf_structure.get('has_text', True)
+    
+    if use_ocr:
+        print(f"📸 OCR modu aktif: Tüm {total_pages} sayfa OCR ile işlenecek (sınırlama olmadan)")
     
     for i, section in enumerate(sections):
         section_text = processor.extract_text_from_pages(pdf_path, section['start_page'], section['end_page'], use_ocr=use_ocr)
@@ -2362,40 +2446,40 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
 @app.post("/api/kurum/process", response_model=ProcessResponse, tags=["SGK Scraper"], summary="Link ile PDF indir, analiz et ve yükle")
 async def process_item(req: ProcessRequest):
     try:
+        # Type kontrolü
+        if req.type.lower() != "kaysis":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Desteklenmeyen scraper tipi: {req.type}. Şu an için sadece 'kaysis' desteklenmektedir."
+            )
+        
         # Mode kontrolü
         mode = req.mode.lower() if req.mode else "t"
         if mode not in ["m", "p", "t"]:
             raise HTTPException(status_code=400, detail="Geçersiz mode. 'm', 'p' veya 't' olmalı.")
         
         print(f"🔧 İşlem modu: {mode.upper()} ({'MevzuatGPT' if mode == 'm' else 'Portal' if mode == 'p' else 'Tamamı'})")
+        print(f"📋 Scraper tipi: {req.type}")
         
-        # kurumlar.json'dan kurum bilgisini çek
-        kurum_url = None
+        # MongoDB'den kurum bilgisini çek
         kurum_adi = None
         try:
-            with open('kurumlar.json', 'r', encoding='utf-8') as f:
-                kurumlar_data = json.load(f)
-                kurumlar_list = kurumlar_data.get('kurumlar', [])
-                for kurum in kurumlar_list:
-                    if kurum.get('id') == req.kurum_id:
-                        kurum_url = kurum.get('url')
-                        kurum_adi = kurum.get('kurum_adi', 'Bilinmeyen Kurum')
-                        break
-                
-                if not kurum_url:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Kurum ID '{req.kurum_id}' kurumlar.json dosyasında bulunamadı"
-                    )
-        except FileNotFoundError:
-            raise HTTPException(status_code=500, detail="kurumlar.json dosyası bulunamadı")
-        except json.JSONDecodeError as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"kurumlar.json dosyası geçersiz JSON formatında: {str(e)}"
-            )
+            client = _get_mongodb_client()
+            if client:
+                database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+                db = client[database_name]
+                kurumlar_collection = db["kurumlar"]
+                from bson import ObjectId
+                kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.kurum_id)})
+                if kurum_doc:
+                    kurum_adi = kurum_doc.get("kurum_adi", "Bilinmeyen Kurum")
+                client.close()
+        except Exception as e:
+            print(f"⚠️ MongoDB'den kurum bilgisi alınamadı: {str(e)}")
+            kurum_adi = "Bilinmeyen Kurum"
         
         print(f"📋 Kurum: {kurum_adi}")
+        print(f"🔢 DETSIS: {req.detsis}")
         
         # Link ve diğer bilgileri request'ten al
         pdf_url = req.link
@@ -2413,7 +2497,7 @@ async def process_item(req: ProcessRequest):
 
         # PDF'i indir
         print("📥 PDF indiriliyor...")
-        pdf_path = download_pdf_from_url(pdf_url)
+        pdf_path = await download_pdf_from_url(pdf_url)
         if not validate_pdf_file(pdf_path):
             raise HTTPException(status_code=500, detail="İndirilen dosya geçerli bir PDF değil.")
         print("✅ PDF indirme başarılı")

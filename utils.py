@@ -1,14 +1,15 @@
 import requests
 import tempfile
 import os
+import asyncio
 from pathlib import Path
 from urllib.parse import urlparse
 import uuid
 
-def html_to_pdf(url: str) -> str:
-    """HTML sayfasını PDF'ye çevirir (playwright kullanarak)"""
+async def html_to_pdf(url: str) -> str:
+    """HTML sayfasını PDF'ye çevirir (playwright async API kullanarak)"""
     try:
-        from playwright.sync_api import sync_playwright
+        from playwright.async_api import async_playwright
     except ImportError:
         raise Exception("Playwright kurulu değil. Lütfen 'pip install playwright' ve 'playwright install chromium' komutlarını çalıştırın.")
     
@@ -16,39 +17,64 @@ def html_to_pdf(url: str) -> str:
     filename = f"html_to_pdf_{uuid.uuid4().hex[:8]}.pdf"
     temp_path = os.path.join(temp_dir, filename)
     
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+    print(f"🌐 HTML sayfası açılıyor: {url}")
+    
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
         
-        # Sayfayı URL'den aç (daha iyi render için)
-        page.goto(url, wait_until="networkidle", timeout=60000)
+        # Viewport boyutunu ayarla (daha iyi render için)
+        await page.set_viewport_size({"width": 1920, "height": 1080})
         
-        # Sayfanın yüklenmesini bekle
-        page.wait_for_timeout(2000)  # 2 saniye bekle
+        try:
+            # Sayfayı URL'den aç (daha uzun timeout ve daha fazla bekleme)
+            print("⏳ Sayfa yükleniyor...")
+            await page.goto(url, wait_until="networkidle", timeout=120000)  # 2 dakika timeout
+            
+            # Sayfanın tamamen yüklenmesini bekle (KAYSİS sayfaları için daha uzun bekleme)
+            await page.wait_for_timeout(3000)  # 3 saniye bekle
+            
+            # JavaScript'in çalışmasını bekle (eğer dinamik içerik varsa)
+            await page.wait_for_load_state("domcontentloaded")
+            await page.wait_for_load_state("networkidle")
+            
+            print("📄 PDF'ye dönüştürülüyor...")
+            
+            # PDF olarak kaydet (daha iyi formatlama için)
+            await page.pdf(
+                path=temp_path,
+                format="A4",
+                print_background=True,
+                margin={"top": "15mm", "right": "15mm", "bottom": "15mm", "left": "15mm"},
+                prefer_css_page_size=False
+            )
+            
+            print("✅ PDF oluşturuldu")
+            
+        except Exception as e:
+            await browser.close()
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise Exception(f"HTML sayfası PDF'ye dönüştürülürken hata: {str(e)}")
         
-        # PDF olarak kaydet
-        page.pdf(
-            path=temp_path,
-            format="A4",
-            print_background=True,
-            margin={"top": "20mm", "right": "20mm", "bottom": "20mm", "left": "20mm"}
-        )
-        
-        browser.close()
+        await browser.close()
     
     # Dosya boyutunu kontrol et
+    if not os.path.exists(temp_path):
+        raise ValueError("PDF dosyası oluşturulamadı")
+    
     file_size = os.path.getsize(temp_path)
     if file_size < 1024:  # 1KB'dan küçükse
         os.remove(temp_path)
-        raise ValueError("Oluşturulan PDF çok küçük")
+        raise ValueError("Oluşturulan PDF çok küçük (sayfa içeriği boş olabilir)")
+    
+    print(f"📊 PDF boyutu: {file_size / 1024:.2f} KB")
     
     return temp_path
 
 
-def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
-    """URL'den PDF indirir veya HTML sayfasını PDF'ye çevirir"""
-    import time
-    
+async def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
+    """URL'den PDF indirir veya HTML sayfasını PDF'ye çevirir (async)"""
     last_error = None
     
     for attempt in range(max_retries):
@@ -64,19 +90,35 @@ def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
                 'Accept': 'application/pdf,text/html,application/xhtml+xml,*/*'
             }
             
-            # İçeriği indir (daha uzun timeout ve allow_redirects)
-            response = requests.get(url, headers=headers, timeout=120, allow_redirects=True)  # 2 dakika timeout
+            # İçeriği indir (async thread'de çalıştır - requests sync olduğu için)
+            def _download_sync():
+                return requests.get(url, headers=headers, timeout=120, allow_redirects=True)
+            
+            loop = asyncio.get_running_loop()
+            response = await loop.run_in_executor(None, _download_sync)
             response.raise_for_status()
         
             # Content-Type kontrolü
             content_type = response.headers.get('content-type', '').lower()
             
-            # PDF kontrolü
+            # PDF kontrolü - daha kapsamlı kontrol
             is_pdf = False
-            if 'pdf' in content_type or url.lower().endswith('.pdf'):
-                # PDF magic number kontrolü
-                if response.content.startswith(b'%PDF-'):
-                    is_pdf = True
+            
+            # 1. Content-Type kontrolü
+            if 'application/pdf' in content_type:
+                is_pdf = True
+            # 2. URL uzantısı kontrolü
+            elif url.lower().endswith('.pdf'):
+                is_pdf = True
+            # 3. PDF magic number kontrolü (en güvenilir)
+            elif response.content.startswith(b'%PDF-'):
+                is_pdf = True
+            # 4. HTML içerik kontrolü (eğer HTML tag'leri varsa PDF değildir)
+            elif b'<html' in response.content[:1024].lower() or b'<!doctype' in response.content[:1024].lower():
+                is_pdf = False
+            # 5. Content-Type'da HTML belirtilmişse
+            elif 'text/html' in content_type or 'application/xhtml' in content_type:
+                is_pdf = False
             
             # Eğer PDF ise direkt kaydet
             if is_pdf:
@@ -98,19 +140,24 @@ def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
                 return temp_path
             else:
                 # HTML sayfası ise PDF'ye çevir
-                print("📄 HTML sayfası tespit edildi, PDF'ye çevriliyor...")
+                print(f"📄 HTML sayfası tespit edildi (Content-Type: {content_type}), PDF'ye çevriliyor...")
+                print(f"🔗 URL: {url}")
                 
-                # HTML'i PDF'ye çevir (playwright ile direkt URL'den)
-                pdf_path = html_to_pdf(url)
-                print("✅ HTML sayfası PDF'ye çevrildi")
-                return pdf_path
+                # HTML'i PDF'ye çevir (playwright async ile direkt URL'den)
+                try:
+                    pdf_path = await html_to_pdf(url)
+                    print(f"✅ HTML sayfası başarıyla PDF'ye çevrildi: {pdf_path}")
+                    return pdf_path
+                except Exception as html_error:
+                    print(f"❌ HTML'den PDF'ye dönüştürme hatası: {str(html_error)}")
+                    raise Exception(f"HTML sayfası PDF'ye dönüştürülemedi: {str(html_error)}")
             
         except (requests.exceptions.RequestException, ValueError) as e:
             last_error = e
             if attempt < max_retries - 1:
                 # Son deneme değilse, kısa bir süre bekle ve tekrar dene
                 wait_time = (attempt + 1) * 2  # 2, 4, 6 saniye
-                time.sleep(wait_time)
+                await asyncio.sleep(wait_time)
             continue
         except Exception as e:
             # Diğer hatalar için hemen çık

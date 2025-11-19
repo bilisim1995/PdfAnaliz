@@ -1,6 +1,7 @@
 import openai
 import json
 import re
+import time
 from typing import Dict, Any
 
 class DeepSeekAnalyzer:
@@ -10,10 +11,12 @@ class DeepSeekAnalyzer:
         self.client = openai.OpenAI(
             api_key=api_key,
             base_url="https://api.deepseek.com",
-            timeout=120.0  # 2 dakika timeout
+            timeout=120.0,  # 2 dakika timeout
+            max_retries=3  # Retry sayısı
         )
+        self.api_key = api_key
     
-    def analyze_section_content(self, text_content: str) -> Dict[str, Any]:
+    def analyze_section_content(self, text_content: str, max_retries: int = 3) -> Dict[str, Any]:
         """PDF bölüm içeriğini analiz ederek metadata oluşturur"""
         
         if not text_content or len(text_content.strip()) < 10:
@@ -22,6 +25,34 @@ class DeepSeekAnalyzer:
                 'description': 'Bu bölümde yeterli metin içeriği bulunamadı.',
                 'keywords': 'içerik_yok'
             }
+        
+        # Retry mekanizması ile API çağrısı
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                return self._analyze_section_content_internal(text_content)
+            except Exception as e:
+                last_error = e
+                error_msg = str(e).lower()
+                
+                # Connection error veya network hatası ise retry yap
+                if any(keyword in error_msg for keyword in ['connection', 'timeout', 'network', 'unreachable', 'refused']):
+                    if attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                        print(f"⚠️ DeepSeek API bağlantı hatası (deneme {attempt + 1}/{max_retries}), {wait_time}s sonra tekrar deneniyor...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"❌ DeepSeek API bağlantı hatası: {max_retries} deneme başarısız oldu")
+                else:
+                    # Diğer hatalar için retry yapma
+                    break
+        
+        # Tüm denemeler başarısız oldu, fallback metadata döndür
+        return self._create_fallback_metadata(text_content, last_error)
+    
+    def _analyze_section_content_internal(self, text_content: str) -> Dict[str, Any]:
+        """PDF bölüm içeriğini analiz ederek metadata oluşturur (internal, retry olmadan)"""
         
         try:
             # Metin uzunluğunu sınırla (token limiti için)
@@ -91,14 +122,8 @@ KURALLAR:
                 raise ValueError("API yanıtında JSON bulunamadı")
                 
         except Exception as e:
-            error_msg = f"DeepSeek analiz hatası: {str(e)}"
-            print(error_msg)
-            # Hata durumunda fallback metadata
-            return {
-                'title': 'API Analiz Hatası',
-                'description': f"Bu bölümün AI analizi yapılamadı. Hata: {str(e)}. İçerik yaklaşık {len(text_content)} karakter barındırmaktadır.",
-                'keywords': 'api hatası,analiz yapılamadı'
-            }
+            # Hata durumunda exception'ı yukarı fırlat (retry mekanizması için)
+            raise e
     
     def _clean_analysis_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """API sonucunu temizler ve doğrular"""
@@ -134,29 +159,59 @@ KURALLAR:
         
         return cleaned
     
-    def _create_fallback_metadata(self, text_content: str) -> Dict[str, Any]:
+    def _create_fallback_metadata(self, text_content: str, error: Exception = None) -> Dict[str, Any]:
         """Hata durumunda basit metadata oluşturur"""
         # İçeriğin ilk birkaç kelimesinden başlık oluştur
-        words = text_content.strip().split()[:10]
+        words = text_content.strip().split()[:15]
         title = ' '.join(words) if words else "PDF Bölümü"
         if len(title) > 100:
             title = title[:97] + "..."
         
-        # Basit anahtar kelimeler oluştur
+        # İçerikten önemli kelimeleri çıkar (Türkçe stop words hariç)
+        stop_words = {'bir', 'bu', 've', 'ile', 'için', 'olan', 'olarak', 'daha', 'çok', 'en', 'de', 'da', 'ki', 'gibi', 'kadar', 'sonra', 'önce', 'üzerine', 'altında', 'arasında', 'içinde', 'dışında', 'karşı', 'göre', 'doğru', 'madde', 'fıkra', 'bent', 'kanun', 'yönetmelik', 'tebliğ', 'hakkında', 'tarihli', 'sayılı', 'tarih', 'sayı'}
+        
+        # Anahtar kelimeleri çıkar
         common_words = []
-        for word in text_content.split():
-            word = word.strip().lower()
-            if len(word) > 3 and word.isalpha():
-                if word not in common_words:
-                    common_words.append(word)
-                if len(common_words) >= 5:
-                    break
+        word_freq = {}
+        
+        # Metni temizle ve kelimelere ayır
+        import re
+        clean_text = re.sub(r'[^\w\s]', ' ', text_content.lower())
+        words_list = clean_text.split()
+        
+        for word in words_list:
+            word = word.strip()
+            # 3 karakterden uzun, stop word değil, sadece harf içeren kelimeler
+            if len(word) > 3 and word not in stop_words and word.isalpha():
+                word_freq[word] = word_freq.get(word, 0) + 1
+        
+        # En sık kullanılan kelimeleri al
+        sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
+        common_words = [word for word, _ in sorted_words[:10]]
         
         keywords = ','.join(common_words) if common_words else "pdf içerik,doküman"
         
+        # Açıklama oluştur
+        if error:
+            error_type = "bağlantı" if "connection" in str(error).lower() or "timeout" in str(error).lower() else "analiz"
+            description = f"Bu bölümün AI analizi yapılamadı ({error_type} hatası). İçerik yaklaşık {len(text_content):,} karakter barındırmaktadır. "
+        else:
+            description = f"Bu bölüm yaklaşık {len(text_content):,} karakter içerik barındırmaktadır. "
+        
+        # İçeriğin ilk 200 karakterinden açıklama ekle
+        preview = text_content[:200].strip()
+        if preview:
+            description += f"İçerik özeti: {preview}..."
+        else:
+            description += "İçeriğin detaylı analizi yapılamadı."
+        
+        # Açıklamayı 500 karakterle sınırla
+        if len(description) > 500:
+            description = description[:497] + "..."
+        
         return {
             'title': title,
-            'description': f"Bu bölüm yaklaşık {len(text_content)} karakter içerik barındırmaktadır. İçeriğin detaylı analizi yapılamadı.",
+            'description': description,
             'keywords': keywords
         }
     
@@ -233,7 +288,11 @@ Bu PDF'i anlam bütünlüğü olan, RAG için optimal bölümlere ayır. Her bö
                 raise ValueError("API yanıtında JSON array bulunamadı")
                 
         except Exception as e:
-            print(f"İçerik bazlı bölümleme hatası: {str(e)}")
+            error_msg = str(e).lower()
+            if any(keyword in error_msg for keyword in ['connection', 'timeout', 'network']):
+                print(f"⚠️ İçerik bazlı bölümleme hatası (bağlantı): {str(e)}")
+            else:
+                print(f"⚠️ İçerik bazlı bölümleme hatası: {str(e)}")
             # Fallback: Basit eşit bölümleme
             return self._create_fallback_sections(total_pages)
     
