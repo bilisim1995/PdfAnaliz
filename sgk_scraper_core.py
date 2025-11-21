@@ -157,15 +157,12 @@ def scrape_sgk_mevzuat(url: str = "https://kms.kaysis.gov.tr/Home/Kurum/22620739
                 login_url = f"{api_base_url.rstrip('/')}/api/auth/login"
                 login_data = {"email": email, "password": password}
                 
-                # Proxy bilgilerini çek
-                proxies = get_proxy_from_db()
-                
+                # API isteklerinde proxy kullanılmıyor
                 login_response = requests.post(
                     login_url,
                     headers={"Content-Type": "application/json"},
                     json=login_data,
-                    timeout=60,
-                    proxies=proxies
+                    timeout=60
                 )
                 
                 if login_response.status_code == 200:

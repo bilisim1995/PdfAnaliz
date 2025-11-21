@@ -1044,14 +1044,13 @@ async def scrape_edevlet_links(body: Dict[str, Any]):
             client.close()
             raise HTTPException(status_code=400, detail="Bu URL izin verilen domainlerde değil")
 
-        # Proxy bilgilerini çek
-        proxies = get_proxy_from_db()
+        # E-devlet scraper'ında proxy kullanılmıyor (sadece KAYSİS scraper'ında proxy kullanılıyor)
         
         # Sayfayı çek
         try:
             resp = requests.get(url, headers={
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }, timeout=15, proxies=proxies)
+            }, timeout=15)
             resp.raise_for_status()
         except Exception as e:
             client.close()
@@ -2006,14 +2005,13 @@ def _login_with_config(cfg: Dict[str, Any]) -> Optional[str]:
         password = cfg.get("admin_password")
         if not all([api_base_url, email, password]):
             return None
-        # Proxy bilgilerini çek
-        proxies = get_proxy_from_db()
+        # API isteklerinde proxy kullanılmıyor
         
         login_url = f"{api_base_url.rstrip('/')}/api/auth/login"
         resp = requests.post(login_url, headers={"Content-Type": "application/json"}, json={
             "email": email,
             "password": password
-        }, timeout=60, proxies=proxies)
+        }, timeout=60)
         if resp.status_code == 200:
             data = resp.json()
             return data.get("access_token")
@@ -2709,11 +2707,10 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
                 } for m in metadata_list
             ]}, ensure_ascii=False)
         }
-        # Proxy bilgilerini çek
-        proxies = get_proxy_from_db()
+        # API isteklerinde proxy kullanılmıyor
         
         headers = {'Authorization': f'Bearer {token}'}
-        resp = requests.post(upload_url, headers=headers, data=form_data, files=files_to_upload, timeout=300, proxies=proxies)
+        resp = requests.post(upload_url, headers=headers, data=form_data, files=files_to_upload, timeout=300)
         for f in file_handles:
             try:
                 f.close()

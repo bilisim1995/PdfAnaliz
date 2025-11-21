@@ -136,10 +136,8 @@ def get_uploaded_documents(api_base_url: str, access_token: str, use_streamlit: 
                 'limit': limit
             }
             
-            # Proxy bilgilerini çek
-            proxies = get_proxy_from_db()
-            
-            response = requests.get(url, headers=headers, params=params, timeout=30, proxies=proxies)
+            # API isteklerinde proxy kullanılmıyor
+            response = requests.get(url, headers=headers, params=params, timeout=30)
             
             if response.status_code == 200:
                 result = response.json()
@@ -335,15 +333,12 @@ def scrape_kaysis_mevzuat(detsis: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
                 login_url = f"{api_base_url.rstrip('/')}/api/auth/login"
                 login_data = {"email": email, "password": password}
                 
-                # Proxy bilgilerini çek
-                proxies = get_proxy_from_db()
-                
+                # API isteklerinde proxy kullanılmıyor
                 login_response = requests.post(
                     login_url,
                     headers={"Content-Type": "application/json"},
                     json=login_data,
-                    timeout=60,
-                    proxies=proxies
+                    timeout=60
                 )
                 
                 if login_response.status_code == 200:
