@@ -63,6 +63,10 @@ openapi_tags = [
         "description": "Metadata ve Content koleksiyonları için yönetim endpointleri."
     },
     {
+        "name": "Proxy",
+        "description": "Proxy ayarları için CRUD işlemleri."
+    },
+    {
         "name": "Health",
         "description": "Servis sağlık kontrolü."
     }
@@ -1040,11 +1044,14 @@ async def scrape_edevlet_links(body: Dict[str, Any]):
             client.close()
             raise HTTPException(status_code=400, detail="Bu URL izin verilen domainlerde değil")
 
+        # Proxy bilgilerini çek
+        proxies = get_proxy_from_db()
+        
         # Sayfayı çek
         try:
             resp = requests.get(url, headers={
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }, timeout=15)
+            }, timeout=15, proxies=proxies)
             resp.raise_for_status()
         except Exception as e:
             client.close()
@@ -1440,6 +1447,276 @@ async def delete_kurum_duyuru(id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Hata: {str(e)}")
 
+
+# ==============================
+# Proxy Koleksiyonu Yardımcı Fonksiyonları
+# ==============================
+
+def _get_proxy_collection():
+    """Proxy koleksiyonunu döner"""
+    client = _get_mongodb_client()
+    if not client:
+        return None, None
+    database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+    db = client[database_name]
+    return client, db["proxies"]
+
+
+def get_proxy_from_db() -> Optional[Dict[str, str]]:
+    """
+    MongoDB'den aktif proxy bilgilerini çeker.
+    Returns: {'http': 'http://user:pass@host:port', 'https': 'http://user:pass@host:port'} veya None
+    """
+    try:
+        client, col = _get_proxy_collection()
+        if not client:
+            return None
+        
+        # Aktif proxy'yi bul (is_active=True olan ilk kayıt)
+        proxy_doc = col.find_one({"is_active": True}, sort=[("created_at", -1)])
+        client.close()
+        
+        if not proxy_doc:
+            return None
+        
+        host = proxy_doc.get("host", "").strip()
+        port = proxy_doc.get("port", "").strip()
+        username = proxy_doc.get("username", "").strip()
+        password = proxy_doc.get("password", "").strip()
+        
+        if not host or not port:
+            return None
+        
+        # Proxy URL'ini oluştur
+        if username and password:
+            proxy_auth = f"{username}:{password}"
+            proxy_url = f"{proxy_auth}@{host}:{port}"
+        else:
+            proxy_url = f"{host}:{port}"
+        
+        return {
+            'http': f'http://{proxy_url}',
+            'https': f'http://{proxy_url}'
+        }
+    except Exception as e:
+        print(f"⚠️ Proxy bilgisi çekilemedi: {str(e)}")
+        return None
+
+
+# ==============================
+# Proxy Koleksiyonu CRUD Endpoints
+# ==============================
+
+@app.get("/api/mongo/proxies", tags=["Proxy"], summary="Proxy listele")
+async def list_proxies(limit: int = 100, offset: int = 0):
+    try:
+        client, col = _get_proxy_collection()
+        if not client:
+            raise HTTPException(status_code=500, detail="MongoDB bağlantısı kurulamadı")
+        
+        # Password'u gizle
+        cursor = col.find().sort("created_at", -1).skip(offset).limit(limit)
+        proxies = []
+        for doc in cursor:
+            proxy_data = {
+                "id": str(doc["_id"]),
+                "host": doc.get("host", ""),
+                "port": doc.get("port", ""),
+                "username": doc.get("username", ""),
+                "password": "***" if doc.get("password") else "",  # Password'u gizle
+                "is_active": doc.get("is_active", False),
+                "created_at": doc.get("created_at", ""),
+                "updated_at": doc.get("updated_at", "")
+            }
+            proxies.append(proxy_data)
+        
+        total = col.count_documents({})
+        client.close()
+        return {"success": True, "total": total, "data": proxies}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hata: {str(e)}")
+
+
+@app.post("/api/mongo/proxies", tags=["Proxy"], summary="Proxy oluştur")
+async def create_proxy(body: Dict[str, Any]):
+    try:
+        client, col = _get_proxy_collection()
+        if not client:
+            raise HTTPException(status_code=500, detail="MongoDB bağlantısı kurulamadı")
+        
+        data = body or {}
+        host = (data.get("host") or "").strip()
+        port = (data.get("port") or "").strip()
+        username = (data.get("username") or "").strip()
+        password = (data.get("password") or "").strip()
+        is_active = data.get("is_active", True)
+        
+        if not host or not port:
+            client.close()
+            raise HTTPException(status_code=400, detail="'host' ve 'port' zorunludur")
+        
+        # Port'un sayısal olup olmadığını kontrol et
+        try:
+            port_int = int(port)
+            if port_int < 1 or port_int > 65535:
+                client.close()
+                raise HTTPException(status_code=400, detail="Port 1-65535 arasında olmalıdır")
+        except ValueError:
+            client.close()
+            raise HTTPException(status_code=400, detail="Port geçerli bir sayı olmalıdır")
+        
+        # Eğer yeni proxy aktif yapılıyorsa, diğer aktif proxy'leri pasif yap
+        if is_active:
+            col.update_many({"is_active": True}, {"$set": {"is_active": False, "updated_at": datetime.now().isoformat()}})
+        
+        doc = {
+            "host": host,
+            "port": port,
+            "username": username,
+            "password": password,
+            "is_active": is_active,
+            "created_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        res = col.insert_one(doc)
+        new_id = str(res.inserted_id)
+        client.close()
+        return {"success": True, "id": new_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hata: {str(e)}")
+
+
+@app.get("/api/mongo/proxies/{id}", tags=["Proxy"], summary="Proxy getir")
+async def get_proxy(id: str):
+    try:
+        client, col = _get_proxy_collection()
+        if not client:
+            raise HTTPException(status_code=500, detail="MongoDB bağlantısı kurulamadı")
+        
+        try:
+            doc = col.find_one({"_id": ObjectId(id)})
+        except Exception:
+            client.close()
+            raise HTTPException(status_code=400, detail="Geçersiz proxy id")
+        
+        client.close()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Proxy bulunamadı")
+        
+        return {
+            "success": True,
+            "data": {
+                "id": str(doc["_id"]),
+                "host": doc.get("host", ""),
+                "port": doc.get("port", ""),
+                "username": doc.get("username", ""),
+                "password": "***" if doc.get("password") else "",  # Password'u gizle
+                "is_active": doc.get("is_active", False),
+                "created_at": doc.get("created_at", ""),
+                "updated_at": doc.get("updated_at", "")
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hata: {str(e)}")
+
+
+@app.put("/api/mongo/proxies/{id}", tags=["Proxy"], summary="Proxy güncelle")
+async def update_proxy(id: str, body: Dict[str, Any]):
+    try:
+        client, col = _get_proxy_collection()
+        if not client:
+            raise HTTPException(status_code=500, detail="MongoDB bağlantısı kurulamadı")
+        
+        data = body or {}
+        update_data = {"updated_at": datetime.now().isoformat()}
+        
+        if "host" in data:
+            host = (data.get("host") or "").strip()
+            if not host:
+                client.close()
+                raise HTTPException(status_code=400, detail="'host' boş olamaz")
+            update_data["host"] = host
+        
+        if "port" in data:
+            port = (data.get("port") or "").strip()
+            if not port:
+                client.close()
+                raise HTTPException(status_code=400, detail="'port' boş olamaz")
+            try:
+                port_int = int(port)
+                if port_int < 1 or port_int > 65535:
+                    client.close()
+                    raise HTTPException(status_code=400, detail="Port 1-65535 arasında olmalıdır")
+            except ValueError:
+                client.close()
+                raise HTTPException(status_code=400, detail="Port geçerli bir sayı olmalıdır")
+            update_data["port"] = port
+        
+        if "username" in data:
+            update_data["username"] = (data.get("username") or "").strip()
+        
+        if "password" in data:
+            update_data["password"] = (data.get("password") or "").strip()
+        
+        if "is_active" in data:
+            is_active = data.get("is_active", False)
+            # Eğer proxy aktif yapılıyorsa, diğer aktif proxy'leri pasif yap
+            if is_active:
+                col.update_many(
+                    {"is_active": True, "_id": {"$ne": ObjectId(id)}},
+                    {"$set": {"is_active": False, "updated_at": datetime.now().isoformat()}}
+                )
+            update_data["is_active"] = is_active
+        
+        if not update_data or len(update_data) == 1:  # Sadece updated_at varsa
+            client.close()
+            return {"success": True, "modified": 0, "message": "Güncellenecek alan yok"}
+        
+        try:
+            res = col.update_one({"_id": ObjectId(id)}, {"$set": update_data})
+        except Exception:
+            client.close()
+            raise HTTPException(status_code=400, detail="Geçersiz proxy id")
+        
+        client.close()
+        if res.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Proxy bulunamadı")
+        return {"success": True, "modified": res.modified_count}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hata: {str(e)}")
+
+
+@app.delete("/api/mongo/proxies/{id}", tags=["Proxy"], summary="Proxy sil")
+async def delete_proxy(id: str):
+    try:
+        client, col = _get_proxy_collection()
+        if not client:
+            raise HTTPException(status_code=500, detail="MongoDB bağlantısı kurulamadı")
+        
+        try:
+            res = col.delete_one({"_id": ObjectId(id)})
+        except Exception:
+            client.close()
+            raise HTTPException(status_code=400, detail="Geçersiz proxy id")
+        
+        client.close()
+        if res.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Proxy bulunamadı")
+        return {"success": True, "deleted": res.deleted_count}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hata: {str(e)}")
+
 @app.post("/api/mongo/kurumlar", tags=["Kurumlar"], summary="Kurum oluştur")
 async def create_kurum(
     kurum_adi: str = Form(...),
@@ -1729,11 +2006,14 @@ def _login_with_config(cfg: Dict[str, Any]) -> Optional[str]:
         password = cfg.get("admin_password")
         if not all([api_base_url, email, password]):
             return None
+        # Proxy bilgilerini çek
+        proxies = get_proxy_from_db()
+        
         login_url = f"{api_base_url.rstrip('/')}/api/auth/login"
         resp = requests.post(login_url, headers={"Content-Type": "application/json"}, json={
             "email": email,
             "password": password
-        }, timeout=60)
+        }, timeout=60, proxies=proxies)
         if resp.status_code == 200:
             data = resp.json()
             return data.get("access_token")
@@ -2429,8 +2709,11 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
                 } for m in metadata_list
             ]}, ensure_ascii=False)
         }
+        # Proxy bilgilerini çek
+        proxies = get_proxy_from_db()
+        
         headers = {'Authorization': f'Bearer {token}'}
-        resp = requests.post(upload_url, headers=headers, data=form_data, files=files_to_upload, timeout=300)
+        resp = requests.post(upload_url, headers=headers, data=form_data, files=files_to_upload, timeout=300, proxies=proxies)
         for f in file_handles:
             try:
                 f.close()

@@ -8,6 +8,9 @@ from typing import List, Dict, Any, Optional, Tuple
 import re
 import json
 import unicodedata
+import os
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure, PyMongoError
 
 # Streamlit import (opsiyonel - use_streamlit parametresi ile kontrol edilir)
 try:
@@ -133,7 +136,10 @@ def get_uploaded_documents(api_base_url: str, access_token: str, use_streamlit: 
                 'limit': limit
             }
             
-            response = requests.get(url, headers=headers, params=params, timeout=30)
+            # Proxy bilgilerini çek
+            proxies = get_proxy_from_db()
+            
+            response = requests.get(url, headers=headers, params=params, timeout=30, proxies=proxies)
             
             if response.status_code == 200:
                 result = response.json()
@@ -229,6 +235,68 @@ def check_if_document_exists(document_title: str, uploaded_documents: List[Dict[
 
 
 # ============================================================================
+# Proxy Yardımcı Fonksiyonları
+# ============================================================================
+
+def _get_mongodb_client():
+    """MongoDB bağlantısı oluşturur"""
+    try:
+        connection_string = os.getenv("MONGODB_CONNECTION_STRING")
+        if not connection_string:
+            return None
+        client = MongoClient(connection_string, serverSelectionTimeoutMS=5000)
+        client.admin.command('ping')
+        return client
+    except Exception:
+        return None
+
+
+def get_proxy_from_db() -> Optional[Dict[str, str]]:
+    """
+    MongoDB'den aktif proxy bilgilerini çeker.
+    Returns: {'http': 'http://user:pass@host:port', 'https': 'http://user:pass@host:port'} veya None
+    """
+    try:
+        client = _get_mongodb_client()
+        if not client:
+            return None
+        
+        database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+        db = client[database_name]
+        col = db["proxies"]
+        
+        # Aktif proxy'yi bul (is_active=True olan ilk kayıt)
+        proxy_doc = col.find_one({"is_active": True}, sort=[("created_at", -1)])
+        client.close()
+        
+        if not proxy_doc:
+            return None
+        
+        host = proxy_doc.get("host", "").strip()
+        port = proxy_doc.get("port", "").strip()
+        username = proxy_doc.get("username", "").strip()
+        password = proxy_doc.get("password", "").strip()
+        
+        if not host or not port:
+            return None
+        
+        # Proxy URL'ini oluştur
+        if username and password:
+            proxy_auth = f"{username}:{password}"
+            proxy_url = f"{proxy_auth}@{host}:{port}"
+        else:
+            proxy_url = f"{host}:{port}"
+        
+        return {
+            'http': f'http://{proxy_url}',
+            'https': f'http://{proxy_url}'
+        }
+    except Exception as e:
+        print(f"⚠️ Proxy bilgisi çekilemedi: {str(e)}")
+        return None
+
+
+# ============================================================================
 # KAYSİS Scraping Fonksiyonları
 # ============================================================================
 
@@ -267,11 +335,15 @@ def scrape_kaysis_mevzuat(detsis: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
                 login_url = f"{api_base_url.rstrip('/')}/api/auth/login"
                 login_data = {"email": email, "password": password}
                 
+                # Proxy bilgilerini çek
+                proxies = get_proxy_from_db()
+                
                 login_response = requests.post(
                     login_url,
                     headers={"Content-Type": "application/json"},
                     json=login_data,
-                    timeout=60
+                    timeout=60,
+                    proxies=proxies
                 )
                 
                 if login_response.status_code == 200:
@@ -289,12 +361,19 @@ def scrape_kaysis_mevzuat(detsis: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
     
     print("\n🌐 Siteye bağlanılıyor...")
     
+    # MongoDB'den güncel proxy bilgilerini çek
+    proxies = get_proxy_from_db()
+    if proxies:
+        print("🔐 Proxy kullanılıyor...")
+    else:
+        print("⚠️ Proxy bulunamadı, direkt bağlantı deneniyor...")
+    
     try:
         # Siteye istek gönder
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(url, headers=headers, timeout=30, proxies=proxies)
         
         if response.status_code != 200:
             print(f"❌ Siteye erişilemedi: HTTP {response.status_code}")

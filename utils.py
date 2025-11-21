@@ -5,6 +5,66 @@ import asyncio
 from pathlib import Path
 from urllib.parse import urlparse
 import uuid
+from typing import Optional, Dict
+from pymongo import MongoClient
+
+def _get_mongodb_client():
+    """MongoDB bağlantısı oluşturur"""
+    try:
+        connection_string = os.getenv("MONGODB_CONNECTION_STRING")
+        if not connection_string:
+            return None
+        client = MongoClient(connection_string, serverSelectionTimeoutMS=5000)
+        client.admin.command('ping')
+        return client
+    except Exception:
+        return None
+
+
+def get_proxy_from_db() -> Optional[Dict[str, str]]:
+    """
+    MongoDB'den aktif proxy bilgilerini çeker.
+    Returns: {'http': 'http://user:pass@host:port', 'https': 'http://user:pass@host:port'} veya None
+    """
+    try:
+        client = _get_mongodb_client()
+        if not client:
+            return None
+        
+        database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+        db = client[database_name]
+        col = db["proxies"]
+        
+        # Aktif proxy'yi bul (is_active=True olan ilk kayıt)
+        proxy_doc = col.find_one({"is_active": True}, sort=[("created_at", -1)])
+        client.close()
+        
+        if not proxy_doc:
+            return None
+        
+        host = proxy_doc.get("host", "").strip()
+        port = proxy_doc.get("port", "").strip()
+        username = proxy_doc.get("username", "").strip()
+        password = proxy_doc.get("password", "").strip()
+        
+        if not host or not port:
+            return None
+        
+        # Proxy URL'ini oluştur
+        if username and password:
+            proxy_auth = f"{username}:{password}"
+            proxy_url = f"{proxy_auth}@{host}:{port}"
+        else:
+            proxy_url = f"{host}:{port}"
+        
+        return {
+            'http': f'http://{proxy_url}',
+            'https': f'http://{proxy_url}'
+        }
+    except Exception as e:
+        print(f"⚠️ Proxy bilgisi çekilemedi: {str(e)}")
+        return None
+
 
 async def html_to_pdf(url: str) -> str:
     """HTML sayfasını PDF'ye çevirir (playwright async API kullanarak)"""
@@ -90,9 +150,12 @@ async def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
                 'Accept': 'application/pdf,text/html,application/xhtml+xml,*/*'
             }
             
+            # Proxy bilgilerini çek
+            proxies = get_proxy_from_db()
+            
             # İçeriği indir (async thread'de çalıştır - requests sync olduğu için)
             def _download_sync():
-                return requests.get(url, headers=headers, timeout=120, allow_redirects=True)
+                return requests.get(url, headers=headers, timeout=120, allow_redirects=True, proxies=proxies)
             
             loop = asyncio.get_running_loop()
             response = await loop.run_in_executor(None, _download_sync)
