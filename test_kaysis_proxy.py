@@ -20,10 +20,10 @@ except ImportError:
     sys.exit(1)
 
 # Sabit proxy bilgileri
-PROXY_HOST = "geo.iproyal.com"
-PROXY_PORT = "12321"
-PROXY_USERNAME = "tU23j0va4T4HjIqh"
-PROXY_PASSWORD = "fA0UiMSvxNJiF9B6_country-tr"
+PROXY_HOST = "istanbul8.livaproxy.com"
+PROXY_PORT = "50603"
+PROXY_USERNAME = "mevzuatgpt"
+PROXY_PASSWORD = "mevzuatgpt1235"
 
 
 def get_proxy() -> Dict[str, str]:
