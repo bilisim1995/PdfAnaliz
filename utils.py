@@ -79,9 +79,52 @@ async def html_to_pdf(url: str) -> str:
     
     print(f"🌐 HTML sayfası açılıyor: {url}")
     
+    # PDF görüntüleme/açma işlemlerinde proxy kullanılıyor
+    proxies = get_proxy_from_db()
+    playwright_proxy = None
+    if proxies:
+        # Playwright proxy formatına çevir
+        http_proxy = proxies.get('http', '').replace('http://', '')
+        if http_proxy:
+            # user:pass@host:port formatını parse et
+            if '@' in http_proxy:
+                auth, host_port = http_proxy.split('@', 1)
+                if ':' in auth:
+                    username, password = auth.split(':', 1)
+                else:
+                    username, password = auth, ''
+                if ':' in host_port:
+                    host, port = host_port.split(':', 1)
+                else:
+                    host, port = host_port, '8080'
+                playwright_proxy = {
+                    "server": f"http://{host}:{port}",
+                    "username": username if username else None,
+                    "password": password if password else None
+                }
+            else:
+                if ':' in http_proxy:
+                    host, port = http_proxy.split(':', 1)
+                else:
+                    host, port = http_proxy, '8080'
+                playwright_proxy = {
+                    "server": f"http://{host}:{port}"
+                }
+        if playwright_proxy:
+            print("🔐 PDF görüntüleme işleminde proxy kullanılıyor...")
+    else:
+        print("⚠️ Proxy bulunamadı, direkt bağlantı deneniyor...")
+    
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        
+        # Proxy ile context oluştur
+        if playwright_proxy:
+            context = await browser.new_context(proxy=playwright_proxy)
+        else:
+            context = await browser.new_context()
+        
+        page = await context.new_page()
         
         # Viewport boyutunu ayarla (daha iyi render için)
         await page.set_viewport_size({"width": 1920, "height": 1080})
@@ -112,11 +155,13 @@ async def html_to_pdf(url: str) -> str:
             print("✅ PDF oluşturuldu")
             
         except Exception as e:
+            await context.close()
             await browser.close()
             if os.path.exists(temp_path):
                 os.remove(temp_path)
             raise Exception(f"HTML sayfası PDF'ye dönüştürülürken hata: {str(e)}")
         
+        await context.close()
         await browser.close()
     
     # Dosya boyutunu kontrol et
@@ -150,8 +195,12 @@ async def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
                 'Accept': 'application/pdf,text/html,application/xhtml+xml,*/*'
             }
             
-            # Proxy bilgilerini çek
+            # PDF indirme işlemlerinde proxy kullanılıyor
             proxies = get_proxy_from_db()
+            if proxies:
+                print("🔐 PDF indirme işleminde proxy kullanılıyor...")
+            else:
+                print("⚠️ Proxy bulunamadı, direkt bağlantı deneniyor...")
             
             # İçeriği indir (async thread'de çalıştır - requests sync olduğu için)
             def _download_sync():

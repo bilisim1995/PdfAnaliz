@@ -1044,13 +1044,18 @@ async def scrape_edevlet_links(body: Dict[str, Any]):
             client.close()
             raise HTTPException(status_code=400, detail="Bu URL izin verilen domainlerde değil")
 
-        # E-devlet scraper'ında proxy kullanılmıyor (sadece KAYSİS scraper'ında proxy kullanılıyor)
+        # E-devlet scraper'ında proxy kullanılıyor
+        proxies = get_proxy_from_db()
+        if proxies:
+            print("🔐 E-devlet scraper'ında proxy kullanılıyor...")
+        else:
+            print("⚠️ Proxy bulunamadı, direkt bağlantı deneniyor...")
         
         # Sayfayı çek
         try:
             resp = requests.get(url, headers={
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }, timeout=15)
+            }, timeout=15, proxies=proxies)
             resp.raise_for_status()
         except Exception as e:
             client.close()
