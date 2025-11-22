@@ -17,13 +17,16 @@ import re
 import os
 from pathlib import Path
 import json
+import subprocess
+import platform
+from datetime import datetime
 
 # curl_cffi import kontrolü
 try:
     from curl_cffi import requests
     CURL_CFFI_AVAILABLE = True
 except ImportError:
-    import requests
+import requests
     CURL_CFFI_AVAILABLE = False
 
 from pdf_processor import PDFProcessor
@@ -601,8 +604,252 @@ async def scrape_kurum_portal(req: PortalScanRequest):
 
 @app.get("/health", tags=["Health"], summary="Sağlık kontrolü")
 async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "service": "SGK Scraper API"}
+    """
+    Detaylı sağlık kontrolü endpoint'i.
+    Servis durumu, MongoDB bağlantısı ve sistem bilgilerini kontrol eder.
+    """
+    health_status = {
+        "status": "healthy",
+        "service": "SGK Scraper API",
+        "timestamp": datetime.now().isoformat(),
+        "checks": {}
+    }
+    
+    # 1. MongoDB bağlantı kontrolü
+    try:
+        client = _get_mongodb_client()
+        if client:
+            client.admin.command('ping')
+            client.close()
+            health_status["checks"]["mongodb"] = {
+                "status": "healthy",
+                "message": "MongoDB bağlantısı başarılı"
+            }
+        else:
+            health_status["checks"]["mongodb"] = {
+                "status": "unhealthy",
+                "message": "MongoDB bağlantısı kurulamadı"
+            }
+            health_status["status"] = "degraded"
+    except Exception as e:
+        health_status["checks"]["mongodb"] = {
+            "status": "unhealthy",
+            "message": f"MongoDB bağlantı hatası: {str(e)}"
+        }
+        health_status["status"] = "degraded"
+    
+    # 2. Systemd servis durumu kontrolü
+    try:
+        service_name = "pdfanalyzerrag"
+        result = subprocess.run(
+            ["systemctl", "is-active", service_name],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            service_status = result.stdout.strip()
+            health_status["checks"]["systemd_service"] = {
+                "status": "healthy" if service_status == "active" else "unhealthy",
+                "message": f"Servis durumu: {service_status}",
+                "service_name": service_name
+            }
+            if service_status != "active":
+                health_status["status"] = "unhealthy"
+        else:
+            health_status["checks"]["systemd_service"] = {
+                "status": "unknown",
+                "message": "Servis durumu kontrol edilemedi (systemd mevcut değil veya servis bulunamadı)"
+            }
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+        health_status["checks"]["systemd_service"] = {
+            "status": "unknown",
+            "message": f"Servis durumu kontrol edilemedi: {str(e)}"
+        }
+    
+    # 3. curl_cffi kontrolü
+    health_status["checks"]["curl_cffi"] = {
+        "status": "available" if CURL_CFFI_AVAILABLE else "unavailable",
+        "message": "curl_cffi mevcut" if CURL_CFFI_AVAILABLE else "curl_cffi kurulu değil (standart requests kullanılıyor)"
+    }
+    
+    # 4. Sistem bilgileri
+    health_status["system"] = {
+        "platform": platform.system(),
+        "platform_release": platform.release(),
+        "python_version": platform.python_version()
+    }
+    
+    return health_status
+
+
+@app.get("/api/health/logs", tags=["Health"], summary="Servis loglarını getir")
+async def get_service_logs(lines: int = 100):
+    """
+    Systemd servis loglarını getirir.
+    
+    Args:
+        lines: Gösterilecek log satırı sayısı (varsayılan: 100, maksimum: 1000)
+    
+    Returns:
+        Servis logları ve metadata
+    """
+    try:
+        # Satır sayısını sınırla
+        lines = max(1, min(lines, 1000))
+        
+        service_name = "pdfanalyzerrag"
+        
+        # journalctl komutunu çalıştır
+        result = subprocess.run(
+            ["journalctl", "-u", service_name, "-n", str(lines), "--no-pager"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            logs = result.stdout.strip()
+            log_lines = logs.split('\n') if logs else []
+            
+            return {
+                "success": True,
+                "service_name": service_name,
+                "lines_requested": lines,
+                "lines_returned": len(log_lines),
+                "timestamp": datetime.now().isoformat(),
+                "logs": log_lines,
+                "raw_logs": logs
+            }
+        else:
+            # journalctl komutu başarısız oldu, alternatif yöntem dene
+            error_msg = result.stderr.strip() if result.stderr else "Bilinmeyen hata"
+            
+            # systemctl status komutunu dene
+            try:
+                status_result = subprocess.run(
+                    ["systemctl", "status", service_name, "--no-pager", "-n", str(lines)],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if status_result.returncode == 0:
+                    logs = status_result.stdout.strip()
+                    log_lines = logs.split('\n') if logs else []
+                    return {
+                        "success": True,
+                        "service_name": service_name,
+                        "lines_requested": lines,
+                        "lines_returned": len(log_lines),
+                        "timestamp": datetime.now().isoformat(),
+                        "logs": log_lines,
+                        "raw_logs": logs,
+                        "note": "journalctl kullanılamadı, systemctl status kullanıldı"
+                    }
+            except Exception:
+                pass
+            
+            return {
+                "success": False,
+                "service_name": service_name,
+                "error": f"Loglar alınamadı: {error_msg}",
+                "timestamp": datetime.now().isoformat(),
+                "logs": [],
+                "raw_logs": ""
+            }
+            
+    except subprocess.TimeoutExpired:
+        return {
+            "success": False,
+            "error": "Log alma işlemi zaman aşımına uğradı",
+            "timestamp": datetime.now().isoformat(),
+            "logs": [],
+            "raw_logs": ""
+        }
+    except FileNotFoundError:
+        return {
+            "success": False,
+            "error": "journalctl komutu bulunamadı (systemd mevcut değil)",
+            "timestamp": datetime.now().isoformat(),
+            "logs": [],
+            "raw_logs": ""
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Beklenmeyen hata: {str(e)}",
+            "timestamp": datetime.now().isoformat(),
+            "logs": [],
+            "raw_logs": ""
+        }
+
+
+@app.get("/api/health/status", tags=["Health"], summary="Servis durumu detaylı bilgi")
+async def get_service_status():
+    """
+    Systemd servis durumunu detaylı olarak getirir.
+    
+    Returns:
+        Servis durumu, aktif süre, son restart zamanı vb.
+    """
+    try:
+        service_name = "pdfanalyzerrag"
+        
+        # systemctl status komutunu çalıştır
+        result = subprocess.run(
+            ["systemctl", "status", service_name, "--no-pager"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        status_info = {
+            "success": True,
+            "service_name": service_name,
+            "timestamp": datetime.now().isoformat(),
+            "status_output": result.stdout.strip() if result.returncode == 0 else None,
+            "error": result.stderr.strip() if result.stderr and result.returncode != 0 else None
+        }
+        
+        # systemctl show komutu ile daha detaylı bilgi al
+        try:
+            show_result = subprocess.run(
+                ["systemctl", "show", service_name, "--no-pager"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if show_result.returncode == 0:
+                # Key-value çiftlerini parse et
+                details = {}
+                for line in show_result.stdout.strip().split('\n'):
+                    if '=' in line:
+                        key, value = line.split('=', 1)
+                        details[key] = value
+                status_info["details"] = details
+        except Exception:
+            pass
+        
+        return status_info
+        
+    except subprocess.TimeoutExpired:
+        return {
+            "success": False,
+            "error": "Servis durumu kontrolü zaman aşımına uğradı",
+            "timestamp": datetime.now().isoformat()
+        }
+    except FileNotFoundError:
+        return {
+            "success": False,
+            "error": "systemctl komutu bulunamadı (systemd mevcut değil)",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Beklenmeyen hata: {str(e)}",
+            "timestamp": datetime.now().isoformat()
+        }
 
 
 # ========================
@@ -1753,6 +2000,195 @@ async def delete_proxy(id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Hata: {str(e)}")
+
+
+@app.post("/api/mongo/proxies/test", tags=["Proxy"], summary="Proxy bağlantı testi (KAYSİS)")
+async def test_proxy_connection(body: Dict[str, Any]):
+    """
+    Proxy bağlantısını KAYSİS sitesine test eder.
+    curl_cffi kullanarak Chrome tarayıcısını taklit eder ve WAF engellemelerini aşar.
+    
+    Args:
+        body: {"id": "proxy_id", "detsis": "22620739"} (detsis opsiyonel, varsayılan: 22620739 - SGK)
+    
+    Returns:
+        Test sonuçları (IP bilgisi, bağlantı durumu, hata mesajları)
+    """
+    try:
+        # Body'den proxy ID'yi al
+        if not body or not body.get("id"):
+            raise HTTPException(status_code=400, detail="Body'de 'id' alanı zorunludur")
+        
+        proxy_id = str(body.get("id")).strip()
+        if not proxy_id:
+            raise HTTPException(status_code=400, detail="Proxy ID boş olamaz")
+        
+        # Proxy bilgilerini MongoDB'den çek
+        client, col = _get_proxy_collection()
+        if not client:
+            raise HTTPException(status_code=500, detail="MongoDB bağlantısı kurulamadı")
+        
+        try:
+            proxy_doc = col.find_one({"_id": ObjectId(proxy_id)})
+        except Exception:
+            client.close()
+            raise HTTPException(status_code=400, detail="Geçersiz proxy id formatı")
+        
+        client.close()
+        
+        if not proxy_doc:
+            raise HTTPException(status_code=404, detail=f"Proxy bulunamadı (ID: {proxy_id})")
+        
+        # Proxy bilgilerini hazırla
+        host = proxy_doc.get("host", "").strip()
+        port = proxy_doc.get("port", "").strip()
+        username = proxy_doc.get("username", "").strip()
+        password = proxy_doc.get("password", "").strip()
+        
+        if not host or not port:
+            raise HTTPException(status_code=400, detail="Proxy bilgileri eksik (host veya port)")
+        
+        # Proxy URL'ini oluştur
+        if username and password:
+            proxy_auth = f"{username}:{password}"
+            proxy_url = f"{proxy_auth}@{host}:{port}"
+        else:
+            proxy_url = f"{host}:{port}"
+        
+        proxies = {
+            'http': f'http://{proxy_url}',
+            'https': f'http://{proxy_url}'
+        }
+        
+        # DETSIS numarasını al (varsayılan: 22620739 - SGK)
+        detsis = "22620739"
+        if body.get("detsis"):
+            detsis = str(body.get("detsis")).strip()
+        
+        test_url = f"https://kms.kaysis.gov.tr/Home/Kurum/{detsis}"
+        
+        result = {
+            "success": False,
+            "proxy_id": proxy_id,
+            "proxy_host": host,
+            "proxy_port": port,
+            "test_url": test_url,
+            "detsis": detsis,
+            "ip_info": None,
+            "connection_status": None,
+            "http_status": None,
+            "response_size": None,
+            "error": None,
+            "curl_cffi_available": CURL_CFFI_AVAILABLE
+        }
+        
+        # 1. IP kontrolü
+        try:
+            print(f"🌍 Proxy IP adresi kontrol ediliyor... (Proxy ID: {proxy_id})")
+            ip_response = requests.get(
+                'https://ipv4.icanhazip.com',
+                proxies=proxies,
+                timeout=10,
+                impersonate="chrome110" if CURL_CFFI_AVAILABLE else None
+            )
+            ip_address = ip_response.text.strip()
+            
+            # IP lokasyon bilgisini al
+            try:
+                geo_response = requests.get(
+                    f'http://ip-api.com/json/{ip_address}?fields=status,country,countryCode,city,query',
+                    proxies=proxies,
+                    timeout=10,
+                    impersonate="chrome110" if CURL_CFFI_AVAILABLE else None
+                )
+                geo_data = geo_response.json()
+                
+                if geo_data.get('status') == 'success':
+                    result["ip_info"] = {
+                        "ip": ip_address,
+                        "country": geo_data.get('country', 'Bilinmiyor'),
+                        "country_code": geo_data.get('countryCode', 'Bilinmiyor'),
+                        "city": geo_data.get('city', 'Bilinmiyor'),
+                        "is_turkey": geo_data.get('countryCode') == 'TR'
+                    }
+                else:
+                    result["ip_info"] = {"ip": ip_address}
+            except Exception as e:
+                result["ip_info"] = {"ip": ip_address, "error": str(e)}
+        except Exception as e:
+            result["ip_info"] = {"error": f"IP kontrolü başarısız: {str(e)}"}
+        
+        # 2. KAYSİS bağlantı testi
+        try:
+            print(f"🌐 KAYSİS sitesine bağlanılıyor... (Proxy ID: {proxy_id})")
+            
+            # Gerçek bir Chrome tarayıcısının gönderdiği tüm header'lar
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Referer': 'https://www.google.com/',
+                'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'cross-site',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1',
+                'Connection': 'keep-alive',
+                'Cache-Control': 'max-age=0'
+            }
+            
+            # curl_cffi ile Chrome taklidi yap (eğer mevcut ise)
+            if CURL_CFFI_AVAILABLE:
+                response = requests.get(
+                    test_url,
+                    headers=headers,
+                    proxies=proxies,
+                    timeout=30,
+                    impersonate="chrome110"  # Chrome 110 TLS fingerprint
+                )
+            else:
+                response = requests.get(test_url, headers=headers, timeout=30, proxies=proxies)
+            
+            result["http_status"] = response.status_code
+            result["response_size"] = len(response.content)
+            
+            if response.status_code == 200:
+                result["success"] = True
+                result["connection_status"] = "success"
+                
+                # HTML içeriğinde başarılı yükleme işaretleri kontrol et
+                content = response.text.lower()
+                if 'accordion' in content or 'panel' in content or 'kurum' in content:
+                    result["content_check"] = "KAYSİS yapısı tespit edildi"
+                else:
+                    result["content_check"] = "Sayfa yüklendi ancak beklenen içerik bulunamadı"
+            else:
+                result["connection_status"] = "failed"
+                result["error"] = f"HTTP {response.status_code}: {response.text[:200] if response.text else 'Boş yanıt'}"
+                
+        except requests.exceptions.ProxyError as e:
+            result["connection_status"] = "proxy_error"
+            result["error"] = f"Proxy hatası: {str(e)}"
+        except requests.exceptions.Timeout:
+            result["connection_status"] = "timeout"
+            result["error"] = "Zaman aşımı: Bağlantı 30 saniye içinde tamamlanamadı"
+        except requests.exceptions.ConnectionError as e:
+            result["connection_status"] = "connection_error"
+            result["error"] = f"Bağlantı hatası: {str(e)}"
+        except Exception as e:
+            result["connection_status"] = "error"
+            result["error"] = f"Beklenmeyen hata: {str(e)}"
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Test sırasında hata: {str(e)}")
 
 @app.post("/api/mongo/kurumlar", tags=["Kurumlar"], summary="Kurum oluştur")
 async def create_kurum(
