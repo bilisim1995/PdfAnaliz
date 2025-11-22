@@ -647,20 +647,32 @@ async def health_check():
     try:
         service_name = "pdfanalyzerrag"
         
-        # systemctl komutunu farklı path'lerde ara
+        # systemctl komutunu farklı path'lerde ara (önce en yaygın path'ler)
         systemctl_paths = ["/usr/bin/systemctl", "/bin/systemctl", "systemctl"]
         systemctl_cmd = None
         
         for path in systemctl_paths:
             try:
-                result = subprocess.run(
-                    ["which", path] if path == "systemctl" else ["test", "-f", path],
-                    capture_output=True,
-                    timeout=2
-                )
-                if result.returncode == 0 or path != "systemctl":
-                    systemctl_cmd = path if path != "systemctl" else "systemctl"
-                    break
+                if path == "systemctl":
+                    # PATH'te ara
+                    result = subprocess.run(
+                        ["which", "systemctl"],
+                        capture_output=True,
+                        timeout=2
+                    )
+                    if result.returncode == 0:
+                        systemctl_cmd = result.stdout.strip().decode('utf-8') if result.stdout else "systemctl"
+                        break
+                else:
+                    # Direkt path'i kontrol et
+                    result = subprocess.run(
+                        ["test", "-f", path],
+                        capture_output=True,
+                        timeout=2
+                    )
+                    if result.returncode == 0:
+                        systemctl_cmd = path
+                        break
             except Exception:
                 continue
         
@@ -731,20 +743,32 @@ async def get_service_logs(lines: int = 100):
         
         service_name = "pdfanalyzerrag"
         
-        # journalctl komutunu farklı path'lerde ara
+        # journalctl komutunu farklı path'lerde ara (önce en yaygın path'ler)
         journalctl_paths = ["/usr/bin/journalctl", "/bin/journalctl", "journalctl"]
         journalctl_cmd = None
         
         for path in journalctl_paths:
             try:
-                result = subprocess.run(
-                    ["which", path] if path == "journalctl" else ["test", "-f", path],
-                    capture_output=True,
-                    timeout=2
-                )
-                if result.returncode == 0 or path != "journalctl":
-                    journalctl_cmd = path if path != "journalctl" else "journalctl"
-                    break
+                if path == "journalctl":
+                    # PATH'te ara
+                    result = subprocess.run(
+                        ["which", "journalctl"],
+                        capture_output=True,
+                        timeout=2
+                    )
+                    if result.returncode == 0:
+                        journalctl_cmd = result.stdout.strip().decode('utf-8') if result.stdout else "journalctl"
+                        break
+                else:
+                    # Direkt path'i kontrol et
+                    result = subprocess.run(
+                        ["test", "-f", path],
+                        capture_output=True,
+                        timeout=2
+                    )
+                    if result.returncode == 0:
+                        journalctl_cmd = path
+                        break
             except Exception:
                 continue
         
@@ -790,14 +814,26 @@ async def get_service_logs(lines: int = 100):
             
             for path in systemctl_paths:
                 try:
-                    test_result = subprocess.run(
-                        ["which", path] if path == "systemctl" else ["test", "-f", path],
-                        capture_output=True,
-                        timeout=2
-                    )
-                    if test_result.returncode == 0 or path != "systemctl":
-                        systemctl_cmd = path if path != "systemctl" else "systemctl"
-                        break
+                    if path == "systemctl":
+                        # PATH'te ara
+                        test_result = subprocess.run(
+                            ["which", "systemctl"],
+                            capture_output=True,
+                            timeout=2
+                        )
+                        if test_result.returncode == 0:
+                            systemctl_cmd = test_result.stdout.strip().decode('utf-8') if test_result.stdout else "systemctl"
+                            break
+                    else:
+                        # Direkt path'i kontrol et
+                        test_result = subprocess.run(
+                            ["test", "-f", path],
+                            capture_output=True,
+                            timeout=2
+                        )
+                        if test_result.returncode == 0:
+                            systemctl_cmd = path
+                            break
                 except Exception:
                     continue
             
@@ -871,20 +907,32 @@ async def get_service_status():
     try:
         service_name = "pdfanalyzerrag"
         
-        # systemctl komutunu farklı path'lerde ara
+        # systemctl komutunu farklı path'lerde ara (önce en yaygın path'ler)
         systemctl_paths = ["/usr/bin/systemctl", "/bin/systemctl", "systemctl"]
         systemctl_cmd = None
         
         for path in systemctl_paths:
             try:
-                test_result = subprocess.run(
-                    ["which", path] if path == "systemctl" else ["test", "-f", path],
-                    capture_output=True,
-                    timeout=2
-                )
-                if test_result.returncode == 0 or path != "systemctl":
-                    systemctl_cmd = path if path != "systemctl" else "systemctl"
-                    break
+                if path == "systemctl":
+                    # PATH'te ara
+                    test_result = subprocess.run(
+                        ["which", "systemctl"],
+                        capture_output=True,
+                        timeout=2
+                    )
+                    if test_result.returncode == 0:
+                        systemctl_cmd = test_result.stdout.strip().decode('utf-8') if test_result.stdout else "systemctl"
+                        break
+                else:
+                    # Direkt path'i kontrol et
+                    test_result = subprocess.run(
+                        ["test", "-f", path],
+                        capture_output=True,
+                        timeout=2
+                    )
+                    if test_result.returncode == 0:
+                        systemctl_cmd = path
+                        break
             except Exception:
                 continue
         
