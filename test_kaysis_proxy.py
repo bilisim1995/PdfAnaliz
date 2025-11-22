@@ -1,75 +1,32 @@
 #!/usr/bin/env python3
 """
 KAYSİS Proxy Bağlantı Test Scripti
-MongoDB'den proxy bilgilerini çeker ve KAYSİS sitesine bağlantıyı test eder.
+Sabit proxy bilgilerini kullanarak KAYSİS sitesine bağlantıyı test eder.
 """
 
-import os
 import sys
 import requests
-from typing import Optional, Dict
-from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure, PyMongoError
+from typing import Dict
+
+# Sabit proxy bilgileri
+PROXY_HOST = "geo.iproyal.com"
+PROXY_PORT = "12321"
+PROXY_USERNAME = "tU23j0va4T4HjIqh"
+PROXY_PASSWORD = "fA0UiMSvxNJiF9B6_country-tr"
 
 
-def _get_mongodb_client():
-    """MongoDB bağlantısı oluşturur"""
-    try:
-        connection_string = os.getenv("MONGODB_CONNECTION_STRING")
-        if not connection_string:
-            print("❌ MONGODB_CONNECTION_STRING environment variable bulunamadı!")
-            return None
-        client = MongoClient(connection_string, serverSelectionTimeoutMS=5000)
-        client.admin.command('ping')
-        return client
-    except Exception as e:
-        print(f"❌ MongoDB bağlantı hatası: {str(e)}")
-        return None
-
-
-def get_proxy_from_db() -> Optional[Dict[str, str]]:
+def get_proxy() -> Dict[str, str]:
     """
-    MongoDB'den aktif proxy bilgilerini çeker.
-    Returns: {'http': 'http://user:pass@host:port', 'https': 'http://user:pass@host:port'} veya None
+    Sabit proxy bilgilerini döner.
+    Returns: {'http': 'http://user:pass@host:port', 'https': 'http://user:pass@host:port'}
     """
-    try:
-        client = _get_mongodb_client()
-        if not client:
-            return None
-        
-        database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
-        db = client[database_name]
-        col = db["proxies"]
-        
-        # Aktif proxy'yi bul (is_active=True olan ilk kayıt)
-        proxy_doc = col.find_one({"is_active": True}, sort=[("created_at", -1)])
-        client.close()
-        
-        if not proxy_doc:
-            return None
-        
-        host = proxy_doc.get("host", "").strip()
-        port = proxy_doc.get("port", "").strip()
-        username = proxy_doc.get("username", "").strip()
-        password = proxy_doc.get("password", "").strip()
-        
-        if not host or not port:
-            return None
-        
-        # Proxy URL'ini oluştur
-        if username and password:
-            proxy_auth = f"{username}:{password}"
-            proxy_url = f"{proxy_auth}@{host}:{port}"
-        else:
-            proxy_url = f"{host}:{port}"
-        
-        return {
-            'http': f'http://{proxy_url}',
-            'https': f'http://{proxy_url}'
-        }
-    except Exception as e:
-        print(f"⚠️ Proxy bilgisi çekilemedi: {str(e)}")
-        return None
+    proxy_auth = f"{PROXY_USERNAME}:{PROXY_PASSWORD}"
+    proxy_url = f"{proxy_auth}@{PROXY_HOST}:{PROXY_PORT}"
+    
+    return {
+        'http': f'http://{proxy_url}',
+        'https': f'http://{proxy_url}'
+    }
 
 
 def test_kaysis_connection(detsis: str = "22620739") -> bool:
@@ -90,14 +47,9 @@ def test_kaysis_connection(detsis: str = "22620739") -> bool:
     print(f"📡 Test URL: {url}")
     print()
     
-    # Proxy bilgilerini çek
-    print("🔐 Proxy bilgileri MongoDB'den çekiliyor...")
-    proxies = get_proxy_from_db()
-    
-    if not proxies:
-        print("❌ Proxy bulunamadı!")
-        print("   MongoDB'de aktif (is_active=True) bir proxy kaydı olmalı.")
-        return False
+    # Sabit proxy bilgilerini kullan
+    proxies = get_proxy()
+    print("🔐 Sabit proxy bilgileri kullanılıyor.")
     
     # Proxy bilgilerini göster (şifre hariç)
     http_proxy = proxies.get('http', '')
