@@ -809,19 +809,19 @@ async def get_service_logs(lines: int = 100):
                         text=True,
                         timeout=10
                     )
-                if status_result.returncode == 0:
-                    logs = status_result.stdout.strip()
-                    log_lines = logs.split('\n') if logs else []
-                    return {
-                        "success": True,
-                        "service_name": service_name,
-                        "lines_requested": lines,
-                        "lines_returned": len(log_lines),
-                        "timestamp": datetime.now().isoformat(),
-                        "logs": log_lines,
-                        "raw_logs": logs,
-                        "note": "journalctl kullanılamadı, systemctl status kullanıldı"
-                    }
+                    if status_result.returncode == 0:
+                        logs = status_result.stdout.strip()
+                        log_lines = logs.split('\n') if logs else []
+                        return {
+                            "success": True,
+                            "service_name": service_name,
+                            "lines_requested": lines,
+                            "lines_returned": len(log_lines),
+                            "timestamp": datetime.now().isoformat(),
+                            "logs": log_lines,
+                            "raw_logs": logs,
+                            "note": "journalctl kullanılamadı, systemctl status kullanıldı"
+                        }
                 except Exception:
                     pass
             
