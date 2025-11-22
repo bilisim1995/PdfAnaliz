@@ -26,7 +26,7 @@ try:
     from curl_cffi import requests
     CURL_CFFI_AVAILABLE = True
 except ImportError:
-    import requests
+import requests
     CURL_CFFI_AVAILABLE = False
 
 from pdf_processor import PDFProcessor
@@ -646,30 +646,56 @@ async def health_check():
     # 2. Systemd servis durumu kontrolü
     try:
         service_name = "pdfanalyzerrag"
-        result = subprocess.run(
-            ["systemctl", "is-active", service_name],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode == 0:
-            service_status = result.stdout.strip()
-            health_status["checks"]["systemd_service"] = {
-                "status": "healthy" if service_status == "active" else "unhealthy",
-                "message": f"Servis durumu: {service_status}",
-                "service_name": service_name
-            }
-            if service_status != "active":
-                health_status["status"] = "unhealthy"
+        
+        # systemctl komutunu farklı path'lerde ara
+        systemctl_paths = ["/usr/bin/systemctl", "/bin/systemctl", "systemctl"]
+        systemctl_cmd = None
+        
+        for path in systemctl_paths:
+            try:
+                result = subprocess.run(
+                    ["which", path] if path == "systemctl" else ["test", "-f", path],
+                    capture_output=True,
+                    timeout=2
+                )
+                if result.returncode == 0 or path != "systemctl":
+                    systemctl_cmd = path if path != "systemctl" else "systemctl"
+                    break
+            except Exception:
+                continue
+        
+        if systemctl_cmd:
+            result = subprocess.run(
+                [systemctl_cmd, "is-active", service_name],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                service_status = result.stdout.strip()
+                health_status["checks"]["systemd_service"] = {
+                    "status": "healthy" if service_status == "active" else "unhealthy",
+                    "message": f"Servis durumu: {service_status}",
+                    "service_name": service_name
+                }
+                if service_status != "active":
+                    health_status["status"] = "unhealthy"
+            else:
+                health_status["checks"]["systemd_service"] = {
+                    "status": "unknown",
+                    "message": f"Servis durumu kontrol edilemedi: {result.stderr.strip() if result.stderr else 'Servis bulunamadı veya erişilemedi'}"
+                }
         else:
             health_status["checks"]["systemd_service"] = {
-                "status": "unknown",
-                "message": "Servis durumu kontrol edilemedi (systemd mevcut değil veya servis bulunamadı)"
+                "status": "not_available",
+                "message": "systemctl komutu bulunamadı (systemd mevcut değil veya PATH'te yok)",
+                "note": "Bu sistemde systemd servis yönetimi kullanılamıyor olabilir"
             }
     except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
         health_status["checks"]["systemd_service"] = {
-            "status": "unknown",
-            "message": f"Servis durumu kontrol edilemedi: {str(e)}"
+            "status": "not_available",
+            "message": f"Systemd servis kontrolü yapılamadı: {str(e)}",
+            "note": "Sistem systemd kullanmıyor olabilir veya yetki sorunu olabilir"
         }
     
     # 3. curl_cffi kontrolü
@@ -705,9 +731,37 @@ async def get_service_logs(lines: int = 100):
         
         service_name = "pdfanalyzerrag"
         
+        # journalctl komutunu farklı path'lerde ara
+        journalctl_paths = ["/usr/bin/journalctl", "/bin/journalctl", "journalctl"]
+        journalctl_cmd = None
+        
+        for path in journalctl_paths:
+            try:
+                result = subprocess.run(
+                    ["which", path] if path == "journalctl" else ["test", "-f", path],
+                    capture_output=True,
+                    timeout=2
+                )
+                if result.returncode == 0 or path != "journalctl":
+                    journalctl_cmd = path if path != "journalctl" else "journalctl"
+                    break
+            except Exception:
+                continue
+        
+        if not journalctl_cmd:
+            return {
+                "success": False,
+                "service_name": service_name,
+                "error": "journalctl komutu bulunamadı (systemd mevcut değil)",
+                "timestamp": datetime.now().isoformat(),
+                "logs": [],
+                "raw_logs": "",
+                "note": "Bu sistemde systemd log yönetimi kullanılamıyor"
+            }
+        
         # journalctl komutunu çalıştır
         result = subprocess.run(
-            ["journalctl", "-u", service_name, "-n", str(lines), "--no-pager"],
+            [journalctl_cmd, "-u", service_name, "-n", str(lines), "--no-pager"],
             capture_output=True,
             text=True,
             timeout=10
@@ -731,13 +785,30 @@ async def get_service_logs(lines: int = 100):
             error_msg = result.stderr.strip() if result.stderr else "Bilinmeyen hata"
             
             # systemctl status komutunu dene
-            try:
-                status_result = subprocess.run(
-                    ["systemctl", "status", service_name, "--no-pager", "-n", str(lines)],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
+            systemctl_paths = ["/usr/bin/systemctl", "/bin/systemctl", "systemctl"]
+            systemctl_cmd = None
+            
+            for path in systemctl_paths:
+                try:
+                    test_result = subprocess.run(
+                        ["which", path] if path == "systemctl" else ["test", "-f", path],
+                        capture_output=True,
+                        timeout=2
+                    )
+                    if test_result.returncode == 0 or path != "systemctl":
+                        systemctl_cmd = path if path != "systemctl" else "systemctl"
+                        break
+                except Exception:
+                    continue
+            
+            if systemctl_cmd:
+                try:
+                    status_result = subprocess.run(
+                        [systemctl_cmd, "status", service_name, "--no-pager", "-n", str(lines)],
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
                 if status_result.returncode == 0:
                     logs = status_result.stdout.strip()
                     log_lines = logs.split('\n') if logs else []
@@ -751,8 +822,8 @@ async def get_service_logs(lines: int = 100):
                         "raw_logs": logs,
                         "note": "journalctl kullanılamadı, systemctl status kullanıldı"
                     }
-            except Exception:
-                pass
+                except Exception:
+                    pass
             
             return {
                 "success": False,
@@ -800,9 +871,34 @@ async def get_service_status():
     try:
         service_name = "pdfanalyzerrag"
         
+        # systemctl komutunu farklı path'lerde ara
+        systemctl_paths = ["/usr/bin/systemctl", "/bin/systemctl", "systemctl"]
+        systemctl_cmd = None
+        
+        for path in systemctl_paths:
+            try:
+                test_result = subprocess.run(
+                    ["which", path] if path == "systemctl" else ["test", "-f", path],
+                    capture_output=True,
+                    timeout=2
+                )
+                if test_result.returncode == 0 or path != "systemctl":
+                    systemctl_cmd = path if path != "systemctl" else "systemctl"
+                    break
+            except Exception:
+                continue
+        
+        if not systemctl_cmd:
+            return {
+                "success": False,
+                "error": "systemctl komutu bulunamadı (systemd mevcut değil)",
+                "timestamp": datetime.now().isoformat(),
+                "note": "Bu sistemde systemd servis yönetimi kullanılamıyor"
+            }
+        
         # systemctl status komutunu çalıştır
         result = subprocess.run(
-            ["systemctl", "status", service_name, "--no-pager"],
+            [systemctl_cmd, "status", service_name, "--no-pager"],
             capture_output=True,
             text=True,
             timeout=10
@@ -819,7 +915,7 @@ async def get_service_status():
         # systemctl show komutu ile daha detaylı bilgi al
         try:
             show_result = subprocess.run(
-                ["systemctl", "show", service_name, "--no-pager"],
+                [systemctl_cmd, "show", service_name, "--no-pager"],
                 capture_output=True,
                 text=True,
                 timeout=10
