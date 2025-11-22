@@ -1,12 +1,23 @@
 #!/usr/bin/env python3
 """
 KAYSİS Proxy Bağlantı Test Scripti
+curl_cffi kullanarak Chrome tarayıcısını taklit eder ve WAF engellemelerini aşar.
 Sabit proxy bilgilerini kullanarak KAYSİS sitesine bağlantıyı test eder.
 """
 
 import sys
-import requests
-from typing import Dict
+import json
+from typing import Dict, Optional
+
+# curl_cffi import kontrolü
+try:
+    from curl_cffi import requests
+    CURL_CFFI_AVAILABLE = True
+except ImportError:
+    CURL_CFFI_AVAILABLE = False
+    print("❌ curl_cffi modülü bulunamadı!")
+    print("   Lütfen şu komutu çalıştırın: pip install curl-cffi")
+    sys.exit(1)
 
 # Sabit proxy bilgileri
 PROXY_HOST = "geo.iproyal.com"
@@ -29,9 +40,83 @@ def get_proxy() -> Dict[str, str]:
     }
 
 
+def check_proxy_ip(proxies: Dict[str, str]) -> Optional[Dict[str, str]]:
+    """
+    Proxy üzerinden IP adresini kontrol eder ve lokasyon bilgisini döner.
+    
+    Args:
+        proxies: Proxy bilgileri
+    
+    Returns:
+        IP ve lokasyon bilgileri veya None
+    """
+    print("🌍 Proxy IP adresi kontrol ediliyor...")
+    try:
+        # IP adresini al
+        ip_response = requests.get(
+            'https://ipv4.icanhazip.com',
+            proxies=proxies,
+            timeout=10,
+            impersonate="chrome110"  # Chrome 110 parmak izi
+        )
+        ip_address = ip_response.text.strip()
+        
+        # IP lokasyon bilgisini al
+        try:
+            geo_response = requests.get(
+                f'http://ip-api.com/json/{ip_address}?fields=status,country,countryCode,city,query',
+                proxies=proxies,
+                timeout=10,
+                impersonate="chrome110"
+            )
+            geo_data = geo_response.json()
+            
+            if geo_data.get('status') == 'success':
+                country = geo_data.get('country', 'Bilinmiyor')
+                country_code = geo_data.get('countryCode', 'Bilinmiyor')
+                city = geo_data.get('city', 'Bilinmiyor')
+                
+                print(f"   IP Adresi: {ip_address}")
+                print(f"   Ülke: {country} ({country_code})")
+                print(f"   Şehir: {city}")
+                
+                # Türkiye kontrolü
+                if country_code == 'TR':
+                    print("   ✅ Proxy Türkiye IP'si kullanıyor!")
+                    return {
+                        'ip': ip_address,
+                        'country': country,
+                        'country_code': country_code,
+                        'city': city,
+                        'is_turkey': True
+                    }
+                else:
+                    print(f"   ⚠️ Proxy Türkiye IP'si kullanmıyor! ({country_code})")
+                    return {
+                        'ip': ip_address,
+                        'country': country,
+                        'country_code': country_code,
+                        'city': city,
+                        'is_turkey': False
+                    }
+            else:
+                print(f"   IP Adresi: {ip_address}")
+                print("   ⚠️ Lokasyon bilgisi alınamadı")
+                return {'ip': ip_address}
+        except Exception as e:
+            print(f"   IP Adresi: {ip_address}")
+            print(f"   ⚠️ Lokasyon bilgisi alınamadı: {str(e)}")
+            return {'ip': ip_address}
+            
+    except Exception as e:
+        print(f"   ❌ IP kontrolü başarısız: {str(e)}")
+        return None
+
+
 def test_kaysis_connection(detsis: str = "22620739") -> bool:
     """
     KAYSİS sitesine proxy ile bağlantıyı test eder.
+    curl_cffi kullanarak Chrome tarayıcısını taklit eder ve WAF engellemelerini aşar.
     
     Args:
         detsis: DETSIS numarası (varsayılan: 22620739 - SGK)
@@ -42,7 +127,7 @@ def test_kaysis_connection(detsis: str = "22620739") -> bool:
     url = f"https://kms.kaysis.gov.tr/Home/Kurum/{detsis}"
     
     print("=" * 80)
-    print("🔍 KAYSİS Proxy Bağlantı Testi")
+    print("🔍 KAYSİS Proxy Bağlantı Testi (curl_cffi ile Chrome Taklidi)")
     print("=" * 80)
     print(f"📡 Test URL: {url}")
     print()
@@ -58,22 +143,57 @@ def test_kaysis_connection(detsis: str = "22620739") -> bool:
     else:
         proxy_display = http_proxy.replace('http://', '')
     
-    print(f"✅ Proxy bulundu: {proxy_display}")
+    print(f"✅ Proxy: {proxy_display}")
     print()
     
-    # Bağlantı testi
-    print("🌐 KAYSİS sitesine bağlanılıyor...")
+    # IP kontrolü
+    ip_info = check_proxy_ip(proxies)
+    print()
+    
+    # Bağlantı testi - Chrome tarayıcısını taklit et
+    print("🌐 KAYSİS sitesine bağlanılıyor (Chrome taklidi ile)...")
     try:
+        # Gerçek bir Chrome tarayıcısının gönderdiği tüm header'lar
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Referer': 'https://www.google.com/',
+            'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'cross-site',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+            'Connection': 'keep-alive',
+            'Cache-Control': 'max-age=0'
         }
         
-        response = requests.get(url, headers=headers, timeout=30, proxies=proxies)
+        # curl_cffi ile Chrome 110 parmak izini kullan
+        response = requests.get(
+            url,
+            headers=headers,
+            proxies=proxies,
+            timeout=30,
+            impersonate="chrome110",  # Chrome 110 TLS fingerprint
+            verify=True
+        )
         
         if response.status_code == 200:
             print("✅ Bağlantı başarılı!")
             print(f"   HTTP Status: {response.status_code}")
             print(f"   Response Size: {len(response.content)} bytes")
+            
+            # HTML içeriğinde başarılı yükleme işaretleri kontrol et
+            content = response.text.lower()
+            if 'accordion' in content or 'panel' in content or 'kurum' in content:
+                print("   ✅ Sayfa içeriği başarıyla yüklendi (KAYSİS yapısı tespit edildi)")
+            else:
+                print("   ⚠️ Sayfa yüklendi ancak beklenen içerik bulunamadı")
+            
             print()
             print("=" * 80)
             return True
@@ -105,6 +225,8 @@ def test_kaysis_connection(detsis: str = "22620739") -> bool:
         return False
     except Exception as e:
         print(f"❌ Beklenmeyen hata: {str(e)}")
+        import traceback
+        traceback.print_exc()
         print()
         print("=" * 80)
         return False
@@ -112,6 +234,12 @@ def test_kaysis_connection(detsis: str = "22620739") -> bool:
 
 def main():
     """Ana fonksiyon"""
+    # curl_cffi kontrolü
+    if not CURL_CFFI_AVAILABLE:
+        print("❌ curl_cffi modülü bulunamadı!")
+        print("   Lütfen şu komutu çalıştırın: pip install curl-cffi")
+        sys.exit(1)
+    
     # DETSIS numarasını argüman olarak al (opsiyonel)
     detsis = sys.argv[1] if len(sys.argv) > 1 else "22620739"
     
@@ -128,4 +256,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
