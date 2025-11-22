@@ -26,7 +26,7 @@ try:
     from curl_cffi import requests
     CURL_CFFI_AVAILABLE = True
 except ImportError:
-import requests
+    import requests
     CURL_CFFI_AVAILABLE = False
 
 from pdf_processor import PDFProcessor
