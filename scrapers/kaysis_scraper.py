@@ -1,8 +1,17 @@
 """
 KAYSİS Scraper Module
 KAYSİS sitesinden mevzuat tarama modülü - Tüm kurumlar için tek scraper
+curl_cffi kullanarak Chrome tarayıcısını taklit eder ve WAF engellemelerini aşar.
 """
-import requests
+# curl_cffi import kontrolü
+try:
+    from curl_cffi import requests
+    CURL_CFFI_AVAILABLE = True
+except ImportError:
+    import requests
+    CURL_CFFI_AVAILABLE = False
+    print("⚠️ curl_cffi modülü bulunamadı, standart requests kullanılıyor. WAF engellemeleri aşılamayabilir.")
+
 from bs4 import BeautifulSoup
 from typing import List, Dict, Any, Optional, Tuple
 import re
@@ -364,11 +373,36 @@ def scrape_kaysis_mevzuat(detsis: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
         print("⚠️ Proxy bulunamadı, direkt bağlantı deneniyor...")
     
     try:
-        # Siteye istek gönder
+        # Gerçek bir Chrome tarayıcısının gönderdiği tüm header'lar
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Referer': 'https://www.google.com/',
+            'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'cross-site',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+            'Connection': 'keep-alive',
+            'Cache-Control': 'max-age=0'
         }
-        response = requests.get(url, headers=headers, timeout=30, proxies=proxies)
+        
+        # curl_cffi ile Chrome taklidi yap (eğer mevcut ise)
+        if CURL_CFFI_AVAILABLE:
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=30,
+                proxies=proxies,
+                impersonate="chrome110"  # Chrome 110 TLS fingerprint
+            )
+        else:
+            response = requests.get(url, headers=headers, timeout=30, proxies=proxies)
         
         if response.status_code != 200:
             print(f"❌ Siteye erişilemedi: HTTP {response.status_code}")

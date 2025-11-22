@@ -1,4 +1,11 @@
-import requests
+# curl_cffi import kontrolü
+try:
+    from curl_cffi import requests
+    CURL_CFFI_AVAILABLE = True
+except ImportError:
+    import requests
+    CURL_CFFI_AVAILABLE = False
+
 import tempfile
 import os
 import asyncio
@@ -189,10 +196,23 @@ async def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
             if not parsed_url.scheme or not parsed_url.netloc:
                 raise ValueError("Geçersiz URL formatı")
             
-            # HTTP headers
+            # Gerçek bir Chrome tarayıcısının gönderdiği tüm header'lar
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'application/pdf,text/html,application/xhtml+xml,*/*'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/pdf,text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Referer': 'https://www.google.com/',
+                'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'cross-site',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1',
+                'Connection': 'keep-alive',
+                'Cache-Control': 'max-age=0'
             }
             
             # PDF indirme işlemlerinde proxy kullanılıyor
@@ -204,7 +224,17 @@ async def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
             
             # İçeriği indir (async thread'de çalıştır - requests sync olduğu için)
             def _download_sync():
-                return requests.get(url, headers=headers, timeout=120, allow_redirects=True, proxies=proxies)
+                if CURL_CFFI_AVAILABLE:
+                    return requests.get(
+                        url,
+                        headers=headers,
+                        timeout=120,
+                        allow_redirects=True,
+                        proxies=proxies,
+                        impersonate="chrome110"  # Chrome 110 TLS fingerprint
+                    )
+                else:
+                    return requests.get(url, headers=headers, timeout=120, allow_redirects=True, proxies=proxies)
             
             loop = asyncio.get_running_loop()
             response = await loop.run_in_executor(None, _download_sync)
