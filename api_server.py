@@ -3226,45 +3226,45 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
     else:
         # use_ocr is None: Otomatik karar - Eski algoritma
         # Önce PDF yapısını analiz et
-    pdf_structure = processor.analyze_pdf_structure(pdf_path)
-    total_pages = pdf_structure['total_pages']
-    
-    # Resim formatı kontrolü: Eğer PDF resim formatındaysa direkt OCR ile başla
-    text_coverage = pdf_structure.get('text_coverage', 0.0)
-    has_text = pdf_structure.get('has_text', False)
-    needs_ocr = pdf_structure.get('needs_ocr', False)
-    
-    # Ortalama sayfa başına metin miktarını kontrol et (sadece başlıklar mı yoksa gerçek içerik mi?)
-    avg_text_per_page = 0
-    if total_pages > 0:
-        # Hızlı kontrol: İlk 3 sayfadan ortalama metin miktarını hesapla
-        import pdfplumber
-        from io import BytesIO
-        with open(pdf_path, 'rb') as f:
-            pdf_bytes = f.read()
-        pdf_file_obj = BytesIO(pdf_bytes)
-        with pdfplumber.open(pdf_file_obj) as pdf:
-            quick_check_pages = min(3, total_pages)
-            quick_total_text = 0
-            for page_num in range(quick_check_pages):
-                try:
-                    page = pdf.pages[page_num]
-                    page_text = page.extract_text()
-                    if page_text:
-                        quick_total_text += len(page_text.strip())
-                except Exception:
-                    pass
-            avg_text_per_page = quick_total_text / quick_check_pages if quick_check_pages > 0 else 0
-    
-    # Resim formatı: Metin yoksa veya çok az metin varsa (%30'dan az) veya OCR gerekliyse
-    # %30 eşiği: Metin kapsamı düşükse kalite zayıf olabilir, OCR daha iyi sonuç verebilir
-    # Ayrıca, eğer metin varsa ama çok azsa (sadece başlıklar), OCR gerekli
-    is_image_pdf = not has_text or text_coverage < 0.3 or needs_ocr or (has_text and avg_text_per_page < 300)
-    
-    use_ocr = is_image_pdf  # Resim formatındaysa OCR kullan
-    
-    if is_image_pdf:
-        print(f"📸 PDF resim formatında tespit edildi (kapsam: %{text_coverage*100:.1f}, ortalama: {avg_text_per_page:.0f} karakter/sayfa). OCR ile tüm {total_pages} sayfa işlenecek (sınırlama olmadan)...")
+        pdf_structure = processor.analyze_pdf_structure(pdf_path)
+        total_pages = pdf_structure['total_pages']
+        
+        # Resim formatı kontrolü: Eğer PDF resim formatındaysa direkt OCR ile başla
+        text_coverage = pdf_structure.get('text_coverage', 0.0)
+        has_text = pdf_structure.get('has_text', False)
+        needs_ocr = pdf_structure.get('needs_ocr', False)
+        
+        # Ortalama sayfa başına metin miktarını kontrol et (sadece başlıklar mı yoksa gerçek içerik mi?)
+        avg_text_per_page = 0
+        if total_pages > 0:
+            # Hızlı kontrol: İlk 3 sayfadan ortalama metin miktarını hesapla
+            import pdfplumber
+            from io import BytesIO
+            with open(pdf_path, 'rb') as f:
+                pdf_bytes = f.read()
+            pdf_file_obj = BytesIO(pdf_bytes)
+            with pdfplumber.open(pdf_file_obj) as pdf:
+                quick_check_pages = min(3, total_pages)
+                quick_total_text = 0
+                for page_num in range(quick_check_pages):
+                    try:
+                        page = pdf.pages[page_num]
+                        page_text = page.extract_text()
+                        if page_text:
+                            quick_total_text += len(page_text.strip())
+                    except Exception:
+                        pass
+                avg_text_per_page = quick_total_text / quick_check_pages if quick_check_pages > 0 else 0
+        
+        # Resim formatı: Metin yoksa veya çok az metin varsa (%30'dan az) veya OCR gerekliyse
+        # %30 eşiği: Metin kapsamı düşükse kalite zayıf olabilir, OCR daha iyi sonuç verebilir
+        # Ayrıca, eğer metin varsa ama çok azsa (sadece başlıklar), OCR gerekli
+        is_image_pdf = not has_text or text_coverage < 0.3 or needs_ocr or (has_text and avg_text_per_page < 300)
+        
+        use_ocr = is_image_pdf  # Resim formatındaysa OCR kullan
+        
+        if is_image_pdf:
+            print(f"📸 PDF resim formatında tespit edildi (kapsam: %{text_coverage*100:.1f}, ortalama: {avg_text_per_page:.0f} karakter/sayfa). OCR ile tüm {total_pages} sayfa işlenecek (sınırlama olmadan)...")
     
     use_ai = bool(api_key)
     if use_ai:
