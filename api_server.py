@@ -3227,44 +3227,44 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
         # use_ocr is None: Otomatik karar - Eski algoritma
         # Önce PDF yapısını analiz et
         pdf_structure = processor.analyze_pdf_structure(pdf_path)
-        total_pages = pdf_structure['total_pages']
-        
-        # Resim formatı kontrolü: Eğer PDF resim formatındaysa direkt OCR ile başla
-        text_coverage = pdf_structure.get('text_coverage', 0.0)
-        has_text = pdf_structure.get('has_text', False)
-        needs_ocr = pdf_structure.get('needs_ocr', False)
-        
-        # Ortalama sayfa başına metin miktarını kontrol et (sadece başlıklar mı yoksa gerçek içerik mi?)
-        avg_text_per_page = 0
-        if total_pages > 0:
-            # Hızlı kontrol: İlk 3 sayfadan ortalama metin miktarını hesapla
-            import pdfplumber
-            from io import BytesIO
-            with open(pdf_path, 'rb') as f:
-                pdf_bytes = f.read()
-            pdf_file_obj = BytesIO(pdf_bytes)
-            with pdfplumber.open(pdf_file_obj) as pdf:
-                quick_check_pages = min(3, total_pages)
-                quick_total_text = 0
-                for page_num in range(quick_check_pages):
-                    try:
-                        page = pdf.pages[page_num]
-                        page_text = page.extract_text()
-                        if page_text:
-                            quick_total_text += len(page_text.strip())
-                    except Exception:
-                        pass
-                avg_text_per_page = quick_total_text / quick_check_pages if quick_check_pages > 0 else 0
-        
-        # Resim formatı: Metin yoksa veya çok az metin varsa (%30'dan az) veya OCR gerekliyse
-        # %30 eşiği: Metin kapsamı düşükse kalite zayıf olabilir, OCR daha iyi sonuç verebilir
-        # Ayrıca, eğer metin varsa ama çok azsa (sadece başlıklar), OCR gerekli
-        is_image_pdf = not has_text or text_coverage < 0.3 or needs_ocr or (has_text and avg_text_per_page < 300)
-        
-        use_ocr = is_image_pdf  # Resim formatındaysa OCR kullan
-        
-        if is_image_pdf:
-            print(f"📸 PDF resim formatında tespit edildi (kapsam: %{text_coverage*100:.1f}, ortalama: {avg_text_per_page:.0f} karakter/sayfa). OCR ile tüm {total_pages} sayfa işlenecek (sınırlama olmadan)...")
+    total_pages = pdf_structure['total_pages']
+    
+    # Resim formatı kontrolü: Eğer PDF resim formatındaysa direkt OCR ile başla
+    text_coverage = pdf_structure.get('text_coverage', 0.0)
+    has_text = pdf_structure.get('has_text', False)
+    needs_ocr = pdf_structure.get('needs_ocr', False)
+    
+    # Ortalama sayfa başına metin miktarını kontrol et (sadece başlıklar mı yoksa gerçek içerik mi?)
+    avg_text_per_page = 0
+    if total_pages > 0:
+        # Hızlı kontrol: İlk 3 sayfadan ortalama metin miktarını hesapla
+        import pdfplumber
+        from io import BytesIO
+        with open(pdf_path, 'rb') as f:
+            pdf_bytes = f.read()
+        pdf_file_obj = BytesIO(pdf_bytes)
+        with pdfplumber.open(pdf_file_obj) as pdf:
+            quick_check_pages = min(3, total_pages)
+            quick_total_text = 0
+            for page_num in range(quick_check_pages):
+                try:
+                    page = pdf.pages[page_num]
+                    page_text = page.extract_text()
+                    if page_text:
+                        quick_total_text += len(page_text.strip())
+                except Exception:
+                    pass
+            avg_text_per_page = quick_total_text / quick_check_pages if quick_check_pages > 0 else 0
+    
+    # Resim formatı: Metin yoksa veya çok az metin varsa (%30'dan az) veya OCR gerekliyse
+    # %30 eşiği: Metin kapsamı düşükse kalite zayıf olabilir, OCR daha iyi sonuç verebilir
+    # Ayrıca, eğer metin varsa ama çok azsa (sadece başlıklar), OCR gerekli
+    is_image_pdf = not has_text or text_coverage < 0.3 or needs_ocr or (has_text and avg_text_per_page < 300)
+    
+    use_ocr = is_image_pdf  # Resim formatındaysa OCR kullan
+    
+    if is_image_pdf:
+        print(f"📸 PDF resim formatında tespit edildi (kapsam: %{text_coverage*100:.1f}, ortalama: {avg_text_per_page:.0f} karakter/sayfa). OCR ile tüm {total_pages} sayfa işlenecek (sınırlama olmadan)...")
     
     use_ai = bool(api_key)
     if use_ai:
@@ -3441,16 +3441,55 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
         print(f"📡 [MevzuatGPT Upload] API yanıtı alındı")
         print(f"   📊 Status Code: {resp.status_code}")
         print(f"   📝 Response uzunluğu: {len(resp.text)} karakter")
+        print(f"   📋 Response headers: {dict(resp.headers)}")
         
         if resp.status_code == 200:
-            response_data = resp.json()
-            print(f"✅ [MevzuatGPT Upload] Başarılı!")
-            print(f"   📦 Response: {json.dumps(response_data, ensure_ascii=False, indent=2)[:500]}...")
-            return response_data
+            try:
+                response_data = resp.json()
+                print(f"✅ [MevzuatGPT Upload] Başarılı!")
+                print(f"   📦 Response type: {type(response_data)}")
+                if isinstance(response_data, dict):
+                    print(f"   📊 Response keys: {list(response_data.keys())}")
+                    # Önemli alanları göster
+                    if "success" in response_data:
+                        print(f"   ✅ Success: {response_data.get('success')}")
+                    if "message" in response_data:
+                        print(f"   💬 Message: {response_data.get('message')}")
+                    if "data" in response_data:
+                        data = response_data.get('data')
+                        if isinstance(data, dict):
+                            print(f"   📊 Data keys: {list(data.keys())}")
+                        elif isinstance(data, list):
+                            print(f"   📊 Data list uzunluğu: {len(data)}")
+                    if "inserted_count" in response_data:
+                        print(f"   📈 Inserted count: {response_data.get('inserted_count')}")
+                    if "chunks" in response_data:
+                        chunks = response_data.get('chunks')
+                        if isinstance(chunks, list):
+                            print(f"   📦 Chunks sayısı: {len(chunks)}")
+                            if len(chunks) > 0:
+                                print(f"   📋 İlk chunk örneği: {json.dumps(chunks[0], ensure_ascii=False)[:200]}...")
+                
+                # Full response'u göster (kısaltılmış)
+                response_str = json.dumps(response_data, ensure_ascii=False, indent=2)
+                print(f"   📄 Full response (ilk 2000 karakter):")
+                print(f"      {response_str[:2000]}")
+                if len(response_str) > 2000:
+                    print(f"      ... (toplam {len(response_str)} karakter)")
+                
+                return response_data
+            except json.JSONDecodeError as e:
+                print(f"⚠️ [MevzuatGPT Upload] JSON parse hatası: {str(e)}")
+                print(f"   📝 Raw response: {resp.text[:1000]}")
+                return {"status_code": 200, "text": resp.text, "parse_error": str(e)}
         else:
             print(f"❌ [MevzuatGPT Upload] Başarısız!")
             print(f"   📊 Status Code: {resp.status_code}")
-            print(f"   📝 Response: {resp.text[:1000]}")
+            print(f"   📝 Response headers: {dict(resp.headers)}")
+            print(f"   📝 Response body (ilk 2000 karakter):")
+            print(f"      {resp.text[:2000]}")
+            if len(resp.text) > 2000:
+                print(f"      ... (toplam {len(resp.text)} karakter)")
         return {"status_code": resp.status_code, "text": resp.text}
             
     except requests.exceptions.Timeout as e:
@@ -3627,19 +3666,29 @@ async def process_item(req: ProcessRequest):
                 print("❌ [AŞAMA 2.3] Output dizini bulunamadı!")
                 raise HTTPException(status_code=500, detail="Output dizini bulunamadı")
             
-                upload_resp = _upload_bulk(cfg, token, output_dir, category, institution, document_name, metadata_list)
+            upload_resp = _upload_bulk(cfg, token, output_dir, category, institution, document_name, metadata_list)
             
-                if upload_resp:
+            if upload_resp:
                 # Response kontrolü
-                    if "error" in upload_resp:
-                        print(f"❌ [AŞAMA 2.3] Upload hatası: {upload_resp.get('error')}")
-                        raise HTTPException(status_code=500, detail=f"Upload hatası: {upload_resp.get('error')}")
-                    else:
-                        print(f"✅ [AŞAMA 2.3] Upload başarılı!")
-                        print(f"   📦 Response keys: {list(upload_resp.keys()) if isinstance(upload_resp, dict) else 'N/A'}")
+                if "error" in upload_resp:
+                    print(f"❌ [AŞAMA 2.3] Upload hatası: {upload_resp.get('error')}")
+                    raise HTTPException(status_code=500, detail=f"Upload hatası: {upload_resp.get('error')}")
+                elif upload_resp.get("status_code") and upload_resp.get("status_code") != 200:
+                    print(f"❌ [AŞAMA 2.3] Upload başarısız: HTTP {upload_resp.get('status_code')}")
+                    print(f"   📝 Response: {upload_resp.get('text', '')[:500]}")
+                    raise HTTPException(status_code=500, detail=f"Upload başarısız: HTTP {upload_resp.get('status_code')}")
                 else:
-                    print("❌ [AŞAMA 2.3] Upload response None döndü!")
-                    raise HTTPException(status_code=500, detail="Upload response None")
+                    print(f"✅ [AŞAMA 2.3] Upload başarılı!")
+                    print(f"   📦 Response keys: {list(upload_resp.keys()) if isinstance(upload_resp, dict) else 'N/A'}")
+                    if isinstance(upload_resp, dict):
+                        response_str = json.dumps(upload_resp, ensure_ascii=False, indent=2)
+                        print(f"   📊 Response detayları (ilk 1000 karakter):")
+                        print(f"      {response_str[:1000]}")
+                        if len(response_str) > 1000:
+                            print(f"      ... (toplam {len(response_str)} karakter)")
+            else:
+                print("❌ [AŞAMA 2.3] Upload response None döndü!")
+                raise HTTPException(status_code=500, detail="Upload response None")
         else:
             print("⏭️ MevzuatGPT yükleme atlandı (Portal modu)")
 
