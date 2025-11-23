@@ -3614,7 +3614,7 @@ async def process_item(req: ProcessRequest):
             
             # Login kontrolü
             print("🔐 [AŞAMA 2.2] MevzuatGPT'ye login yapılıyor...")
-                token = _login_with_config(cfg)
+            token = _login_with_config(cfg)
             if not token:
                 print("❌ [AŞAMA 2.2] Login başarısız!")
                 raise HTTPException(status_code=500, detail="MevzuatGPT login başarısız")
@@ -3627,23 +3627,19 @@ async def process_item(req: ProcessRequest):
                 print("❌ [AŞAMA 2.3] Output dizini bulunamadı!")
                 raise HTTPException(status_code=500, detail="Output dizini bulunamadı")
             
-                    upload_resp = _upload_bulk(cfg, token, output_dir, category, institution, document_name, metadata_list)
+                upload_resp = _upload_bulk(cfg, token, output_dir, category, institution, document_name, metadata_list)
             
-                    if upload_resp:
+                if upload_resp:
                 # Response kontrolü
-                if "error" in upload_resp:
-                    print(f"❌ [AŞAMA 2.3] Upload hatası: {upload_resp.get('error')}")
-                    raise HTTPException(status_code=500, detail=f"Upload hatası: {upload_resp.get('error')}")
-                elif upload_resp.get("status_code") and upload_resp.get("status_code") != 200:
-                    print(f"❌ [AŞAMA 2.3] Upload başarısız: HTTP {upload_resp.get('status_code')}")
-                    print(f"   📝 Response: {upload_resp.get('text', '')[:500]}")
-                    raise HTTPException(status_code=500, detail=f"Upload başarısız: HTTP {upload_resp.get('status_code')}")
+                    if "error" in upload_resp:
+                        print(f"❌ [AŞAMA 2.3] Upload hatası: {upload_resp.get('error')}")
+                        raise HTTPException(status_code=500, detail=f"Upload hatası: {upload_resp.get('error')}")
                     else:
-                    print(f"✅ [AŞAMA 2.3] Upload başarılı!")
-                    print(f"   📦 Response keys: {list(upload_resp.keys()) if isinstance(upload_resp, dict) else 'N/A'}")
-            else:
-                print("❌ [AŞAMA 2.3] Upload response None döndü!")
-                raise HTTPException(status_code=500, detail="Upload response None")
+                        print(f"✅ [AŞAMA 2.3] Upload başarılı!")
+                        print(f"   📦 Response keys: {list(upload_resp.keys()) if isinstance(upload_resp, dict) else 'N/A'}")
+                else:
+                    print("❌ [AŞAMA 2.3] Upload response None döndü!")
+                    raise HTTPException(status_code=500, detail="Upload response None")
         else:
             print("⏭️ MevzuatGPT yükleme atlandı (Portal modu)")
 
