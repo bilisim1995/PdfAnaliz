@@ -90,15 +90,10 @@ app = FastAPI(
     openapi_tags=openapi_tags
 )
 
-# CORS middleware ekle
+# CORS middleware ekle - Tüm origin'lere izin ver
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3004",
-        "http://127.0.0.1:3004",
-        "https://yonetim.mevzuatgpt.org",
-        "https://app.mevzuatgpt.org",
-    ],
+    allow_origins=["*"],  # Tüm origin'lere izin ver
     allow_credentials=True,
     allow_methods=["*"],  # Tüm HTTP metodlarına izin ver
     allow_headers=["*"],  # Tüm header'lara izin ver
