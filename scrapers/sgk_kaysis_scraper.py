@@ -133,7 +133,7 @@ def get_uploaded_documents(api_base_url: str, access_token: str, use_streamlit: 
                 'limit': limit
             }
             
-            response = requests.get(url, headers=headers, params=params, timeout=30)
+            response = requests.get(url, headers=headers, params=params, timeout=300)  # 5 dakika timeout
             
             if response.status_code == 200:
                 result = response.json()
@@ -291,7 +291,7 @@ def scrape_sgk_mevzuat(url: str = "https://kms.kaysis.gov.tr/Home/Kurum/22620739
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(url, headers=headers, timeout=300)  # 5 dakika timeout
         
         if response.status_code != 200:
             print(f"❌ Siteye erişilemedi: HTTP {response.status_code}")

@@ -146,7 +146,7 @@ def get_uploaded_documents(api_base_url: str, access_token: str, use_streamlit: 
             }
             
             # API isteklerinde proxy kullanılmıyor
-            response = requests.get(url, headers=headers, params=params, timeout=30)
+            response = requests.get(url, headers=headers, params=params, timeout=300)  # 5 dakika timeout
             
             if response.status_code == 200:
                 result = response.json()
@@ -397,12 +397,12 @@ def scrape_kaysis_mevzuat(detsis: str) -> Tuple[List[Dict[str, Any]], Dict[str, 
             response = requests.get(
                 url,
                 headers=headers,
-                timeout=30,
+                timeout=300,  # 5 dakika timeout
                 proxies=proxies,
                 impersonate="chrome110"  # Chrome 110 TLS fingerprint
             )
         else:
-            response = requests.get(url, headers=headers, timeout=30, proxies=proxies)
+            response = requests.get(url, headers=headers, timeout=300, proxies=proxies)  # 5 dakika timeout
         
         if response.status_code != 200:
             print(f"❌ Siteye erişilemedi: HTTP {response.status_code}")

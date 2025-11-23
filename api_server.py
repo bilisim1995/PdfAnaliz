@@ -2291,11 +2291,11 @@ async def test_proxy_connection(body: Dict[str, Any]):
                     test_url,
                     headers=headers,
                     proxies=proxies,
-                    timeout=30,
+                    timeout=300,  # 5 dakika timeout
                     impersonate="chrome110"  # Chrome 110 TLS fingerprint
                 )
             else:
-                response = requests.get(test_url, headers=headers, timeout=30, proxies=proxies)
+                response = requests.get(test_url, headers=headers, timeout=300, proxies=proxies)  # 5 dakika timeout
             
             result["http_status"] = response.status_code
             result["response_size"] = len(response.content)

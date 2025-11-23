@@ -228,13 +228,13 @@ async def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
                     return requests.get(
                         url,
                         headers=headers,
-                        timeout=120,
+                        timeout=300,  # 5 dakika timeout
                         allow_redirects=True,
                         proxies=proxies,
                         impersonate="chrome110"  # Chrome 110 TLS fingerprint
                     )
                 else:
-                    return requests.get(url, headers=headers, timeout=120, allow_redirects=True, proxies=proxies)
+                    return requests.get(url, headers=headers, timeout=300, allow_redirects=True, proxies=proxies)  # 5 dakika timeout
             
             loop = asyncio.get_running_loop()
             response = await loop.run_in_executor(None, _download_sync)
