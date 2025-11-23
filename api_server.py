@@ -94,9 +94,11 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Tüm origin'lere izin ver
-    allow_credentials=True,
-    allow_methods=["*"],  # Tüm HTTP metodlarına izin ver
+    allow_credentials=False,  # allow_origins=["*"] ile birlikte True olamaz
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # Tüm HTTP metodlarına izin ver
     allow_headers=["*"],  # Tüm header'lara izin ver
+    expose_headers=["*"],  # Tüm header'ları expose et
+    max_age=3600,  # Preflight cache süresi (1 saat)
 )
 
 # Son tarama sonuçlarından id -> item eşlemesini tutmak için önbellek
