@@ -3203,24 +3203,42 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
         use_ocr: OCR kullanımı (True: zorunlu OCR, False: OCR kullanma, None: otomatik karar)
     """
     processor = PDFProcessor()
-    pdf_structure = processor.analyze_pdf_structure(pdf_path)
-    total_pages = pdf_structure['total_pages']
     
     # Kullanıcı OCR kullanımını belirtmişse onu kullan, yoksa otomatik karar ver
-    if use_ocr is not None:
-        # Kullanıcı kararı: True ise OCR kullan, False ise kullanma
-        if use_ocr:
-            # OCR kullanılacaksa önce kontrol et
-            if not processor._check_ocr_available():
-                raise HTTPException(
-                    status_code=500,
-                    detail="OCR kullanımı isteniyor ancak Tesseract OCR kurulu değil. Lütfen 'apt-get install tesseract-ocr tesseract-ocr-tur' komutunu çalıştırın."
-                )
-            print(f"📸 OCR kullanımı kullanıcı tarafından belirlendi: Tüm {total_pages} sayfa OCR ile işlenecek")
-        else:
-            print(f"📄 OCR kullanımı kullanıcı tarafından devre dışı bırakıldı: Normal metin çıkarma kullanılacak")
+    if use_ocr is True:
+        # OCR kullanılacaksa önce kontrol et
+        if not processor._check_ocr_available():
+            raise HTTPException(
+                status_code=500,
+                detail="OCR kullanımı isteniyor ancak Tesseract OCR kurulu değil. Lütfen 'apt-get install tesseract-ocr tesseract-ocr-tur' komutunu çalıştırın."
+            )
+        # use_ocr=True ise sadece total_pages için minimal analiz yap (metin kontrolü yapma)
+        pdf_structure = processor.analyze_pdf_structure(pdf_path, skip_text_analysis=True)
+        total_pages = pdf_structure['total_pages']
+        print(f"📸 OCR kullanımı kullanıcı tarafından belirlendi: Tüm {total_pages} sayfa OCR ile işlenecek")
+    elif use_ocr is False:
+        # OCR kullanılmayacak, normal analiz yap
+        pdf_structure = processor.analyze_pdf_structure(pdf_path)
+        total_pages = pdf_structure['total_pages']
+        print(f"📄 OCR kullanımı kullanıcı tarafından devre dışı bırakıldı: Normal metin çıkarma kullanılacak")
     else:
-        # Otomatik karar: Eski algoritma
+        # use_ocr is None: Otomatik karar - Tam analiz yap
+        pdf_structure = processor.analyze_pdf_structure(pdf_path)
+        total_pages = pdf_structure['total_pages']
+        # Kullanıcı OCR kullanımını açıkça istedi: Direkt OCR'a geç, metin kontrolü yapma
+        if not processor._check_ocr_available():
+            raise HTTPException(
+                status_code=500,
+                detail="OCR kullanımı isteniyor ancak Tesseract OCR kurulu değil. Lütfen 'apt-get install tesseract-ocr tesseract-ocr-tur' komutunu çalıştırın."
+            )
+        print(f"📸 OCR kullanımı kullanıcı tarafından belirlendi: Tüm {total_pages} sayfa OCR ile işlenecek (metin kontrolü yapılmadan)")
+        # use_ocr zaten True, direkt devam et
+    elif use_ocr is False:
+        # Kullanıcı OCR kullanımını açıkça devre dışı bıraktı
+        print(f"📄 OCR kullanımı kullanıcı tarafından devre dışı bırakıldı: Normal metin çıkarma kullanılacak")
+        # use_ocr zaten False, direkt devam et
+    else:
+        # use_ocr is None: Otomatik karar - Eski algoritma
         # Resim formatı kontrolü: Eğer PDF resim formatındaysa direkt OCR ile başla
         text_coverage = pdf_structure.get('text_coverage', 0.0)
         has_text = pdf_structure.get('has_text', False)
@@ -3257,9 +3275,6 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
         
         if is_image_pdf:
             print(f"📸 PDF resim formatında tespit edildi (kapsam: %{text_coverage*100:.1f}, ortalama: {avg_text_per_page:.0f} karakter/sayfa). OCR ile tüm {total_pages} sayfa işlenecek (sınırlama olmadan)...")
-    
-    if is_image_pdf:
-        print(f"📸 PDF resim formatında tespit edildi (kapsam: %{text_coverage*100:.1f}, ortalama: {avg_text_per_page:.0f} karakter/sayfa). OCR ile tüm {total_pages} sayfa işlenecek (sınırlama olmadan)...")
     
     use_ai = bool(api_key)
     if use_ai:

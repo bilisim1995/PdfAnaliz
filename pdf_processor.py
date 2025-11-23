@@ -171,12 +171,27 @@ class PDFProcessor:
                 raise Exception(f"Tesseract hatası: {error_msg}. Sistem paketlerini kurun: 'apt-get install tesseract-ocr tesseract-ocr-tur' (Linux) veya 'brew install tesseract tesseract-lang' (macOS)")
             raise Exception(f"OCR hatası: {error_msg}")
     
-    def analyze_pdf_structure(self, pdf_path: str) -> Dict[str, Any]:
-        """PDF dosyasının yapısını analiz eder"""
+    def analyze_pdf_structure(self, pdf_path: str, skip_text_analysis: bool = False) -> Dict[str, Any]:
+        """PDF dosyasının yapısını analiz eder
+        
+        Args:
+            pdf_path: PDF dosya yolu
+            skip_text_analysis: True ise metin analizi yapılmaz, sadece total_pages döner (OCR kullanımı için)
+        """
         try:
             with open(pdf_path, 'rb') as file:
                 reader = pypdf.PdfReader(file)
                 total_pages = len(reader.pages)
+                
+                # Eğer skip_text_analysis=True ise, sadece total_pages döndür (OCR kullanımı için)
+                if skip_text_analysis:
+                    return {
+                        'total_pages': total_pages,
+                        'sample_text': '',
+                        'has_text': False,
+                        'needs_ocr': True,
+                        'text_coverage': 0.0
+                    }
                 
                 # Daha kapsamlı kontrol: İlk, ortadaki ve son sayfaları kontrol et
                 sample_text = ""
