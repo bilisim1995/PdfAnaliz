@@ -24,8 +24,13 @@ class PDFProcessor:
             # Tesseract'ın kurulu olup olmadığını kontrol et
             try:
                 pytesseract.get_tesseract_version()
-            except Exception:
-                print("⚠️ Tesseract OCR kurulu değil. 'apt-get install tesseract-ocr tesseract-ocr-tur' komutunu çalıştırın.")
+            except Exception as e:
+                print("⚠️ Tesseract OCR kurulu değil veya erişilemiyor.")
+                print("📋 Kurulum için:")
+                print("   Linux/Debian/Ubuntu: sudo apt-get install tesseract-ocr tesseract-ocr-tur tesseract-ocr-eng")
+                print("   macOS: brew install tesseract tesseract-lang")
+                print("   Veya proje kök dizininde: sudo ./install.sh")
+                print(f"   Hata detayı: {str(e)}")
                 self._ocr_available = False
                 return False
             

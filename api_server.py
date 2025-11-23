@@ -199,6 +199,7 @@ class ProcessRequest(BaseModel):
     mode: str = Field(default="t", description="İşlem modu: 'm' (MevzuatGPT), 'p' (Portal), 't' (Tamamı)")
     category: Optional[str] = Field(default=None, description="Belge kategorisi (opsiyonel)")
     document_name: Optional[str] = Field(default=None, description="Belge adı (opsiyonel)")
+    use_ocr: Optional[bool] = Field(default=None, description="OCR kullanımı: True ise tüm sayfalar OCR ile işlenir, False ise OCR kullanılmaz, None ise otomatik karar verilir (varsayılan: None)")
 
     model_config = {
         "json_schema_extra": {
@@ -209,7 +210,8 @@ class ProcessRequest(BaseModel):
                 "link": "https://kms.kaysis.gov.tr/Home/Goster/104890",
                 "mode": "t",
                 "category": "Kanunlar",
-                "document_name": "Türkiye cumhuriyeti hükümeti ile tunus cumhuriyeti hükümeti arasında sosyal güvenlik anlaşmasının onaylanmasının uygun bulunduğuna dair kanun"
+                "document_name": "Türkiye cumhuriyeti hükümeti ile tunus cumhuriyeti hükümeti arasında sosyal güvenlik anlaşmasının onaylanmasının uygun bulunduğuna dair kanun",
+                "use_ocr": True
             }
         }
     }
@@ -3191,45 +3193,70 @@ def _format_text_as_markdown(text: str) -> str:
         return text
 
 
-def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Optional[str]) -> Dict[str, Any]:
-    """Streamlit'e bağlı olmadan analiz ve metadata üretimini yapar."""
+def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Optional[str], use_ocr: Optional[bool] = None) -> Dict[str, Any]:
+    """Streamlit'e bağlı olmadan analiz ve metadata üretimini yapar.
+    
+    Args:
+        pdf_path: PDF dosya yolu
+        pdf_base_name: PDF dosya adı (base)
+        api_key: DeepSeek API anahtarı (opsiyonel)
+        use_ocr: OCR kullanımı (True: zorunlu OCR, False: OCR kullanma, None: otomatik karar)
+    """
     processor = PDFProcessor()
     pdf_structure = processor.analyze_pdf_structure(pdf_path)
     total_pages = pdf_structure['total_pages']
     
-    # Resim formatı kontrolü: Eğer PDF resim formatındaysa direkt OCR ile başla
-    text_coverage = pdf_structure.get('text_coverage', 0.0)
-    has_text = pdf_structure.get('has_text', False)
-    needs_ocr = pdf_structure.get('needs_ocr', False)
-    
-    # Ortalama sayfa başına metin miktarını kontrol et (sadece başlıklar mı yoksa gerçek içerik mi?)
-    avg_text_per_page = 0
-    if total_pages > 0:
-        # Hızlı kontrol: İlk 3 sayfadan ortalama metin miktarını hesapla
-        import pdfplumber
-        from io import BytesIO
-        with open(pdf_path, 'rb') as f:
-            pdf_bytes = f.read()
-        pdf_file_obj = BytesIO(pdf_bytes)
-        with pdfplumber.open(pdf_file_obj) as pdf:
-            quick_check_pages = min(3, total_pages)
-            quick_total_text = 0
-            for page_num in range(quick_check_pages):
-                try:
-                    page = pdf.pages[page_num]
-                    page_text = page.extract_text()
-                    if page_text:
-                        quick_total_text += len(page_text.strip())
-                except Exception:
-                    pass
-            avg_text_per_page = quick_total_text / quick_check_pages if quick_check_pages > 0 else 0
-    
-    # Resim formatı: Metin yoksa veya çok az metin varsa (%30'dan az) veya OCR gerekliyse
-    # %30 eşiği: Metin kapsamı düşükse kalite zayıf olabilir, OCR daha iyi sonuç verebilir
-    # Ayrıca, eğer metin varsa ama çok azsa (sadece başlıklar), OCR gerekli
-    is_image_pdf = not has_text or text_coverage < 0.3 or needs_ocr or (has_text and avg_text_per_page < 300)
-    
-    use_ocr = is_image_pdf  # Resim formatındaysa OCR kullan
+    # Kullanıcı OCR kullanımını belirtmişse onu kullan, yoksa otomatik karar ver
+    if use_ocr is not None:
+        # Kullanıcı kararı: True ise OCR kullan, False ise kullanma
+        if use_ocr:
+            # OCR kullanılacaksa önce kontrol et
+            if not processor._check_ocr_available():
+                raise HTTPException(
+                    status_code=500,
+                    detail="OCR kullanımı isteniyor ancak Tesseract OCR kurulu değil. Lütfen 'apt-get install tesseract-ocr tesseract-ocr-tur' komutunu çalıştırın."
+                )
+            print(f"📸 OCR kullanımı kullanıcı tarafından belirlendi: Tüm {total_pages} sayfa OCR ile işlenecek")
+        else:
+            print(f"📄 OCR kullanımı kullanıcı tarafından devre dışı bırakıldı: Normal metin çıkarma kullanılacak")
+    else:
+        # Otomatik karar: Eski algoritma
+        # Resim formatı kontrolü: Eğer PDF resim formatındaysa direkt OCR ile başla
+        text_coverage = pdf_structure.get('text_coverage', 0.0)
+        has_text = pdf_structure.get('has_text', False)
+        needs_ocr = pdf_structure.get('needs_ocr', False)
+        
+        # Ortalama sayfa başına metin miktarını kontrol et (sadece başlıklar mı yoksa gerçek içerik mi?)
+        avg_text_per_page = 0
+        if total_pages > 0:
+            # Hızlı kontrol: İlk 3 sayfadan ortalama metin miktarını hesapla
+            import pdfplumber
+            from io import BytesIO
+            with open(pdf_path, 'rb') as f:
+                pdf_bytes = f.read()
+            pdf_file_obj = BytesIO(pdf_bytes)
+            with pdfplumber.open(pdf_file_obj) as pdf:
+                quick_check_pages = min(3, total_pages)
+                quick_total_text = 0
+                for page_num in range(quick_check_pages):
+                    try:
+                        page = pdf.pages[page_num]
+                        page_text = page.extract_text()
+                        if page_text:
+                            quick_total_text += len(page_text.strip())
+                    except Exception:
+                        pass
+                avg_text_per_page = quick_total_text / quick_check_pages if quick_check_pages > 0 else 0
+        
+        # Resim formatı: Metin yoksa veya çok az metin varsa (%30'dan az) veya OCR gerekliyse
+        # %30 eşiği: Metin kapsamı düşükse kalite zayıf olabilir, OCR daha iyi sonuç verebilir
+        # Ayrıca, eğer metin varsa ama çok azsa (sadece başlıklar), OCR gerekli
+        is_image_pdf = not has_text or text_coverage < 0.3 or needs_ocr or (has_text and avg_text_per_page < 300)
+        
+        use_ocr = is_image_pdf  # Resim formatındaysa OCR kullan
+        
+        if is_image_pdf:
+            print(f"📸 PDF resim formatında tespit edildi (kapsam: %{text_coverage*100:.1f}, ortalama: {avg_text_per_page:.0f} karakter/sayfa). OCR ile tüm {total_pages} sayfa işlenecek (sınırlama olmadan)...")
     
     if is_image_pdf:
         print(f"📸 PDF resim formatında tespit edildi (kapsam: %{text_coverage*100:.1f}, ortalama: {avg_text_per_page:.0f} karakter/sayfa). OCR ile tüm {total_pages} sayfa işlenecek (sınırlama olmadan)...")
@@ -3400,14 +3427,18 @@ async def process_item(req: ProcessRequest):
             raise HTTPException(status_code=500, detail="İndirilen dosya geçerli bir PDF değil.")
         print("✅ PDF indirme başarılı")
 
-        # Analiz ve metadata (tüm modlar için)
+        # Analiz ve metadata (tüm modlar için: MevzuatGPT, Portal ve Tamamı)
         print("🔍 PDF analiz ediliyor...")
         api_key = _get_deepseek_api_key()
         if not api_key:
             # DeepSeek anahtarı yoksa analiz kalitesiz olacağından bildirim yap
             print("[warn] DeepSeek API anahtarı bulunamadı, manuel bölümleme ve basit metadata kullanılacak.")
         pdf_base_name = "document"
-        analysis_result = _analyze_and_prepare_headless(pdf_path, pdf_base_name, api_key)
+        # Kullanıcının OCR tercihini al (tüm modlar için geçerli: m, p, t)
+        use_ocr = req.use_ocr if hasattr(req, 'use_ocr') else None
+        if use_ocr is not None:
+            print(f"📸 OCR kullanımı: {'Aktif (tüm sayfalar OCR ile işlenecek)' if use_ocr else 'Pasif (normal metin çıkarma)'}")
+        analysis_result = _analyze_and_prepare_headless(pdf_path, pdf_base_name, api_key, use_ocr=use_ocr)
         sections = analysis_result['sections']
         metadata_list = analysis_result['metadata_list']
         print("✅ PDF analiz başarılı")
