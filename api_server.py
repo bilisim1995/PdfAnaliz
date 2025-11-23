@@ -24,10 +24,12 @@ from datetime import datetime
 # curl_cffi import kontrolü
 try:
     from curl_cffi import requests
+    from curl_cffi.requests import CurlMime
     CURL_CFFI_AVAILABLE = True
 except ImportError:
     import requests
     CURL_CFFI_AVAILABLE = False
+    CurlMime = None
 
 from pdf_processor import PDFProcessor
 from deepseek_analyzer import DeepSeekAnalyzer
@@ -3393,18 +3395,24 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
             print("❌ [MevzuatGPT Upload] Yüklenecek PDF dosyası bulunamadı!")
             return None
         
-        files_to_upload = []
-        file_handles = []
+        # PDF dosyalarını oku ve içeriklerini al
+        files_content = []
         for i, pdf_file in enumerate(pdf_files, 1):
             print(f"   📎 [{i}/{len(pdf_files)}] PDF dosyası hazırlanıyor: {pdf_file.name}")
             try:
-                f = open(pdf_file, 'rb')
-                file_handles.append(f)
-                files_to_upload.append(('files', (pdf_file.name, f, 'application/pdf')))
+                with open(pdf_file, 'rb') as f:
+                    file_content = f.read()
+                    file_size = len(file_content)
+                    files_content.append((pdf_file.name, file_content, 'application/pdf'))
+                    print(f"      ✅ Dosya okundu: {file_size:,} bytes")
             except Exception as e:
                 print(f"   ⚠️ [{i}/{len(pdf_files)}] PDF dosyası açılamadı: {pdf_file.name} - {str(e)}")
         
-        print(f"✅ [MevzuatGPT Upload] {len(files_to_upload)} PDF dosyası hazırlandı")
+        if len(files_content) == 0:
+            print("❌ [MevzuatGPT Upload] Yüklenecek PDF dosyası bulunamadı!")
+            return None
+        
+        print(f"✅ [MevzuatGPT Upload] {len(files_content)} PDF dosyası hazırlandı")
         
         # Metadata hazırla
         print(f"📋 [MevzuatGPT Upload] Metadata hazırlanıyor...")
@@ -3418,25 +3426,39 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
             ]}, ensure_ascii=False)
         print(f"   📊 Metadata JSON uzunluğu: {len(metadata_json)} karakter")
         
-        form_data = {
-            'category': category,
-            'institution': institution,
-            'belge_adi': belge_adi,
-            'metadata': metadata_json
-        }
-        
         headers = {'Authorization': f'Bearer {token}'}
         print(f"🚀 [MevzuatGPT Upload] API'ye istek gönderiliyor...")
         print(f"   ⏱️ Timeout: 1200 saniye (20 dakika)")
         
-        resp = requests.post(upload_url, headers=headers, data=form_data, files=files_to_upload, timeout=1200)
-        
-        # Dosya handle'larını kapat
-        for f in file_handles:
-            try:
-                f.close()
-            except Exception:
-                pass
+        # curl_cffi için CurlMime kullan
+        if CURL_CFFI_AVAILABLE:
+            print(f"   📦 CurlMime formatı kullanılıyor (curl_cffi)")
+            multipart = CurlMime()
+            
+            # Her PDF dosyasını ekle (aynı field name 'files' ile)
+            for filename, content, content_type in files_content:
+                multipart.addpart(name='files', filename=filename, data=content, mimetype=content_type)
+                print(f"      ✅ Dosya eklendi: {filename}")
+            
+            # Form verilerini ekle
+            multipart.addpart(name='category', data=category)
+            multipart.addpart(name='institution', data=institution)
+            multipart.addpart(name='belge_adi', data=belge_adi)
+            multipart.addpart(name='metadata', data=metadata_json)
+            
+            print(f"   📋 Form verileri eklendi: category, institution, belge_adi, metadata")
+            resp = requests.post(upload_url, headers=headers, multipart=multipart, timeout=1200)
+        else:
+            # Standart requests kütüphanesi için
+            form_data = {
+                'category': category,
+                'institution': institution,
+                'belge_adi': belge_adi,
+                'metadata': metadata_json
+            }
+            files_to_upload = [('files', (name, content, content_type)) for name, content, content_type in files_content]
+            print(f"   📦 Standart requests formatı kullanılıyor")
+            resp = requests.post(upload_url, headers=headers, data=form_data, files=files_to_upload, timeout=1200)
         
         print(f"📡 [MevzuatGPT Upload] API yanıtı alındı")
         print(f"   📊 Status Code: {resp.status_code}")
