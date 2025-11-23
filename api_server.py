@@ -3398,9 +3398,9 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
         for i, pdf_file in enumerate(pdf_files, 1):
             print(f"   📎 [{i}/{len(pdf_files)}] PDF dosyası hazırlanıyor: {pdf_file.name}")
             try:
-            f = open(pdf_file, 'rb')
-            file_handles.append(f)
-            files_to_upload.append(('files', (pdf_file.name, f, 'application/pdf')))
+                f = open(pdf_file, 'rb')
+                file_handles.append(f)
+                files_to_upload.append(('files', (pdf_file.name, f, 'application/pdf')))
             except Exception as e:
                 print(f"   ⚠️ [{i}/{len(pdf_files)}] PDF dosyası açılamadı: {pdf_file.name} - {str(e)}")
         
