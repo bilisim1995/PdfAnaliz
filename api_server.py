@@ -3472,105 +3472,181 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
         
         print(f"✅ [MevzuatGPT Upload] {len(files_content)} PDF dosyası hazırlandı")
         
-        # Metadata hazırla
-        print(f"📋 [MevzuatGPT Upload] Metadata hazırlanıyor...")
-        metadata_json = json.dumps({"pdf_sections": [
-                {
-                    "output_filename": m.get("output_filename", ""),
-                    "title": m.get("title", ""),
-                    "description": m.get("description", ""),
-                    "keywords": m.get("keywords", "")
-                } for m in metadata_list
-            ]}, ensure_ascii=False)
-        print(f"   📊 Metadata JSON uzunluğu: {len(metadata_json)} karakter")
+        # Toplam dosya boyutunu hesapla
+        total_size = sum(len(content) for _, content, _ in files_content)
+        total_size_mb = round(total_size / (1024 * 1024), 2)
+        print(f"   📊 Toplam dosya boyutu: {total_size:,} bytes ({total_size_mb} MB)")
+        
+        # Batch boyutu: Her batch'te maksimum 3 dosya veya 2MB (413 hatasını önlemek için)
+        BATCH_SIZE = 3  # Dosya sayısı
+        MAX_BATCH_SIZE_MB = 2  # MB cinsinden maksimum batch boyutu
+        
+        # Dosyaları batch'lere böl
+        batches = []
+        current_batch = []
+        current_batch_size = 0
+        
+        for i, (filename, content, content_type) in enumerate(files_content):
+            file_size_mb = len(content) / (1024 * 1024)
+            
+            # Eğer batch doluysa veya yeni dosya eklenince limit aşılacaksa, yeni batch başlat
+            if (len(current_batch) >= BATCH_SIZE or 
+                (current_batch_size + file_size_mb) > MAX_BATCH_SIZE_MB):
+                if current_batch:
+                    batches.append(current_batch)
+                current_batch = []
+                current_batch_size = 0
+            
+            current_batch.append((filename, content, content_type, i))  # i = metadata index
+            current_batch_size += file_size_mb
+        
+        # Son batch'i ekle
+        if current_batch:
+            batches.append(current_batch)
+        
+        print(f"📦 [MevzuatGPT Upload] {len(batches)} batch'e bölündü")
+        for i, batch in enumerate(batches, 1):
+            batch_size = sum(len(content) for _, content, _, _ in batch)
+            batch_size_mb = round(batch_size / (1024 * 1024), 2)
+            print(f"   📦 Batch {i}: {len(batch)} dosya, {batch_size_mb} MB")
         
         headers = {'Authorization': f'Bearer {token}'}
-        print(f"🚀 [MevzuatGPT Upload] API'ye istek gönderiliyor...")
-        print(f"   ⏱️ Timeout: 1200 saniye (20 dakika)")
         
-        # curl_cffi için CurlMime kullan
-        if CURL_CFFI_AVAILABLE:
-            print(f"   📦 CurlMime formatı kullanılıyor (curl_cffi)")
-            multipart = CurlMime()
+        # Her batch'i ayrı ayrı gönder
+        all_responses = []
+        for batch_num, batch in enumerate(batches, 1):
+            print(f"\n🚀 [MevzuatGPT Upload] Batch {batch_num}/{len(batches)} gönderiliyor...")
+            print(f"   📊 Batch içeriği: {len(batch)} dosya")
             
-            # Her PDF dosyasını ekle (aynı field name 'files' ile)
-            for filename, content, content_type in files_content:
-                multipart.addpart(name='files', filename=filename, data=content, mimetype=content_type)
-                print(f"      ✅ Dosya eklendi: {filename}")
+            # Bu batch için metadata hazırla
+            batch_metadata = []
+            for filename, _, _, metadata_idx in batch:
+                if metadata_idx < len(metadata_list):
+                    batch_metadata.append(metadata_list[metadata_idx])
             
-            # Form verilerini ekle
-            multipart.addpart(name='category', data=category)
-            multipart.addpart(name='institution', data=institution)
-            multipart.addpart(name='belge_adi', data=belge_adi)
-            multipart.addpart(name='metadata', data=metadata_json)
+            metadata_json = json.dumps({"pdf_sections": [
+                    {
+                        "output_filename": m.get("output_filename", ""),
+                        "title": m.get("title", ""),
+                        "description": m.get("description", ""),
+                        "keywords": m.get("keywords", "")
+                    } for m in batch_metadata
+                ]}, ensure_ascii=False)
+            print(f"   📊 Metadata JSON uzunluğu: {len(metadata_json)} karakter")
             
-            print(f"   📋 Form verileri eklendi: category, institution, belge_adi, metadata")
-            resp = requests.post(upload_url, headers=headers, multipart=multipart, timeout=1200)
-        else:
-            # Standart requests kütüphanesi için
-            form_data = {
-                'category': category,
-                'institution': institution,
-                'belge_adi': belge_adi,
-                'metadata': metadata_json
-            }
-            files_to_upload = [('files', (name, content, content_type)) for name, content, content_type in files_content]
-            print(f"   📦 Standart requests formatı kullanılıyor")
-            resp = requests.post(upload_url, headers=headers, data=form_data, files=files_to_upload, timeout=1200)
-        
-        print(f"📡 [MevzuatGPT Upload] API yanıtı alındı")
-        print(f"   📊 Status Code: {resp.status_code}")
-        print(f"   📝 Response uzunluğu: {len(resp.text)} karakter")
-        print(f"   📋 Response headers: {dict(resp.headers)}")
-        
-        if resp.status_code == 200:
-            try:
-                response_data = resp.json()
-                print(f"✅ [MevzuatGPT Upload] Başarılı!")
-                print(f"   📦 Response type: {type(response_data)}")
-                if isinstance(response_data, dict):
-                    print(f"   📊 Response keys: {list(response_data.keys())}")
-                    # Önemli alanları göster
-                    if "success" in response_data:
-                        print(f"   ✅ Success: {response_data.get('success')}")
-                    if "message" in response_data:
-                        print(f"   💬 Message: {response_data.get('message')}")
-                    if "data" in response_data:
-                        data = response_data.get('data')
-                        if isinstance(data, dict):
-                            print(f"   📊 Data keys: {list(data.keys())}")
-                        elif isinstance(data, list):
-                            print(f"   📊 Data list uzunluğu: {len(data)}")
-                    if "inserted_count" in response_data:
-                        print(f"   📈 Inserted count: {response_data.get('inserted_count')}")
-                    if "chunks" in response_data:
-                        chunks = response_data.get('chunks')
-                        if isinstance(chunks, list):
-                            print(f"   📦 Chunks sayısı: {len(chunks)}")
-                            if len(chunks) > 0:
-                                print(f"   📋 İlk chunk örneği: {json.dumps(chunks[0], ensure_ascii=False)[:200]}...")
+            print(f"   ⏱️ Timeout: 1200 saniye (20 dakika)")
+            
+            # curl_cffi için CurlMime kullan
+            if CURL_CFFI_AVAILABLE:
+                print(f"   📦 CurlMime formatı kullanılıyor (curl_cffi)")
+                multipart = CurlMime()
                 
-                # Full response'u göster (kısaltılmış)
-                response_str = json.dumps(response_data, ensure_ascii=False, indent=2)
-                print(f"   📄 Full response (ilk 2000 karakter):")
-                print(f"      {response_str[:2000]}")
-                if len(response_str) > 2000:
-                    print(f"      ... (toplam {len(response_str)} karakter)")
+                # Bu batch'teki PDF dosyalarını ekle
+                for filename, content, content_type, _ in batch:
+                    multipart.addpart(name='files', filename=filename, data=content, mimetype=content_type)
+                    file_size = len(content)
+                    print(f"      ✅ Dosya eklendi: {filename} ({file_size:,} bytes)")
                 
-                return response_data
-            except json.JSONDecodeError as e:
-                print(f"⚠️ [MevzuatGPT Upload] JSON parse hatası: {str(e)}")
-                print(f"   📝 Raw response: {resp.text[:1000]}")
-                return {"status_code": 200, "text": resp.text, "parse_error": str(e)}
-        else:
-            print(f"❌ [MevzuatGPT Upload] Başarısız!")
+                # Form verilerini ekle
+                multipart.addpart(name='category', data=category)
+                multipart.addpart(name='institution', data=institution)
+                multipart.addpart(name='belge_adi', data=belge_adi)
+                multipart.addpart(name='metadata', data=metadata_json)
+                
+                print(f"   📋 Form verileri eklendi: category, institution, belge_adi, metadata")
+                resp = requests.post(upload_url, headers=headers, multipart=multipart, timeout=1200)
+            else:
+                # Standart requests kütüphanesi için
+                form_data = {
+                    'category': category,
+                    'institution': institution,
+                    'belge_adi': belge_adi,
+                    'metadata': metadata_json
+                }
+                files_to_upload = [('files', (name, content, content_type)) for name, content, content_type, _ in batch]
+                print(f"   📦 Standart requests formatı kullanılıyor")
+                resp = requests.post(upload_url, headers=headers, data=form_data, files=files_to_upload, timeout=1200)
+        
+            print(f"📡 [MevzuatGPT Upload] Batch {batch_num} yanıtı alındı")
             print(f"   📊 Status Code: {resp.status_code}")
-            print(f"   📝 Response headers: {dict(resp.headers)}")
-            print(f"   📝 Response body (ilk 2000 karakter):")
-            print(f"      {resp.text[:2000]}")
-            if len(resp.text) > 2000:
-                print(f"      ... (toplam {len(resp.text)} karakter)")
-        return {"status_code": resp.status_code, "text": resp.text}
+            print(f"   📝 Response uzunluğu: {len(resp.text)} karakter")
+            print(f"   📋 Response headers: {dict(resp.headers)}")
+            
+            if resp.status_code == 200:
+                try:
+                    response_data = resp.json()
+                    print(f"✅ [MevzuatGPT Upload] Batch {batch_num} başarılı!")
+                    print(f"   📦 Response type: {type(response_data)}")
+                    if isinstance(response_data, dict):
+                        print(f"   📊 Response keys: {list(response_data.keys())}")
+                        # Önemli alanları göster
+                        if "success" in response_data:
+                            print(f"   ✅ Success: {response_data.get('success')}")
+                        if "message" in response_data:
+                            print(f"   💬 Message: {response_data.get('message')}")
+                        if "inserted_count" in response_data:
+                            print(f"   📈 Inserted count: {response_data.get('inserted_count')}")
+                        if "chunks" in response_data:
+                            chunks = response_data.get('chunks')
+                            if isinstance(chunks, list):
+                                print(f"   📦 Chunks sayısı: {len(chunks)}")
+                    
+                    all_responses.append(response_data)
+                except json.JSONDecodeError as e:
+                    print(f"⚠️ [MevzuatGPT Upload] Batch {batch_num} JSON parse hatası: {str(e)}")
+                    print(f"   📝 Raw response: {resp.text[:1000]}")
+                    all_responses.append({"status_code": 200, "text": resp.text, "parse_error": str(e)})
+            else:
+                print(f"❌ [MevzuatGPT Upload] Batch {batch_num} başarısız!")
+                print(f"   📊 Status Code: {resp.status_code}")
+                print(f"   📝 Response headers: {dict(resp.headers)}")
+                print(f"   📝 Response body (ilk 2000 karakter):")
+                print(f"      {resp.text[:2000]}")
+                if len(resp.text) > 2000:
+                    print(f"      ... (toplam {len(resp.text)} karakter)")
+                all_responses.append({"status_code": resp.status_code, "text": resp.text})
+        
+        # Tüm batch'lerin sonuçlarını birleştir
+        print(f"\n📊 [MevzuatGPT Upload] Tüm batch'ler tamamlandı")
+        print(f"   📦 Toplam batch sayısı: {len(batches)}")
+        successful_batches = sum(1 for r in all_responses if isinstance(r, dict) and (r.get('status_code') == 200 or 'success' in r))
+        print(f"   ✅ Başarılı batch sayısı: {successful_batches}")
+        
+        # Eğer tüm batch'ler başarılıysa, birleştirilmiş response döndür
+        if all(isinstance(r, dict) and (r.get('status_code') == 200 or 'success' in r) for r in all_responses):
+            # Başarılı batch'lerin verilerini birleştir
+            combined_response = {
+                "success": True,
+                "message": f"Tüm {len(batches)} batch başarıyla yüklendi",
+                "batches": len(batches),
+                "total_files": len(files_content)
+            }
+            
+            # Chunks ve inserted_count'ları topla
+            total_chunks = 0
+            total_inserted = 0
+            for r in all_responses:
+                if isinstance(r, dict):
+                    if "chunks" in r and isinstance(r["chunks"], list):
+                        total_chunks += len(r["chunks"])
+                    if "inserted_count" in r:
+                        total_inserted += r.get("inserted_count", 0)
+            
+            if total_chunks > 0:
+                combined_response["chunks"] = total_chunks
+            if total_inserted > 0:
+                combined_response["inserted_count"] = total_inserted
+            
+            print(f"✅ [MevzuatGPT Upload] Tüm batch'ler başarılı!")
+            print(f"   📦 Toplam chunks: {total_chunks}")
+            print(f"   📈 Toplam inserted: {total_inserted}")
+            return combined_response
+        else:
+            # Hata varsa ilk hatayı döndür
+            for r in all_responses:
+                if isinstance(r, dict) and r.get('status_code') != 200:
+                    return r
+            return all_responses[0] if all_responses else {"error": "Hiçbir batch gönderilemedi"}
             
     except requests.exceptions.Timeout as e:
         print(f"❌ [MevzuatGPT Upload] Timeout hatası: {str(e)}")
