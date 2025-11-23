@@ -3578,7 +3578,7 @@ async def process_item(req: ProcessRequest):
             print(f"   📊 Bölüm sayısı: {len(sections)}")
             print(f"   📋 Metadata sayısı: {len(metadata_list)}")
             try:
-            output_dir = _split_pdfs(pdf_path, sections, metadata_list)
+                output_dir = _split_pdfs(pdf_path, sections, metadata_list)
                 print(f"✅ [AŞAMA 1] PDF bölümleme başarılı")
                 print(f"   📂 Output dizini: {output_dir}")
                 
