@@ -220,12 +220,12 @@ def scrape_sgk_mevzuat(url: str = "https://kms.kaysis.gov.tr/Home/Kurum/22620739
             response = requests.get(
                 url,
                 headers=headers,
-                timeout=300,  # 5 dakika timeout
+                timeout=1200,  # 20 dakika timeout
                 proxies=proxies,
                 impersonate="chrome110"  # Chrome 110 TLS fingerprint
             )
         else:
-            response = requests.get(url, headers=headers, timeout=300, proxies=proxies)  # 5 dakika timeout
+            response = requests.get(url, headers=headers, timeout=1200, proxies=proxies)  # 20 dakika timeout
         
         if response.status_code != 200:
             print(f"❌ Siteye erişilemedi: HTTP {response.status_code}")

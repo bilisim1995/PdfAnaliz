@@ -719,7 +719,7 @@ def upload_to_api(category, institution, belge_adi):
                     headers=headers,
                     data=form_data,
                     files=files_to_upload,
-                    timeout=300  # 5 minutes timeout
+                    timeout=1200  # 20 dakika timeout
                 )
                 
                 # Close all file handles

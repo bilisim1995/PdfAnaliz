@@ -139,7 +139,7 @@ async def html_to_pdf(url: str) -> str:
         try:
             # Sayfayı URL'den aç (daha uzun timeout ve daha fazla bekleme)
             print("⏳ Sayfa yükleniyor...")
-            await page.goto(url, wait_until="networkidle", timeout=120000)  # 2 dakika timeout
+            await page.goto(url, wait_until="networkidle", timeout=1200000)  # 20 dakika timeout
             
             # Sayfanın tamamen yüklenmesini bekle (KAYSİS sayfaları için daha uzun bekleme)
             await page.wait_for_timeout(3000)  # 3 saniye bekle
@@ -228,13 +228,13 @@ async def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
                     return requests.get(
                         url,
                         headers=headers,
-                        timeout=300,  # 5 dakika timeout
+                        timeout=1200,  # 20 dakika timeout
                         allow_redirects=True,
                         proxies=proxies,
                         impersonate="chrome110"  # Chrome 110 TLS fingerprint
                     )
                 else:
-                    return requests.get(url, headers=headers, timeout=300, allow_redirects=True, proxies=proxies)  # 5 dakika timeout
+                    return requests.get(url, headers=headers, timeout=1200, allow_redirects=True, proxies=proxies)  # 20 dakika timeout
             
             loop = asyncio.get_running_loop()
             response = await loop.run_in_executor(None, _download_sync)

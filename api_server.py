@@ -2291,11 +2291,11 @@ async def test_proxy_connection(body: Dict[str, Any]):
                     test_url,
                     headers=headers,
                     proxies=proxies,
-                    timeout=300,  # 5 dakika timeout
+                    timeout=1200,  # 20 dakika timeout
                     impersonate="chrome110"  # Chrome 110 TLS fingerprint
                 )
             else:
-                response = requests.get(test_url, headers=headers, timeout=300, proxies=proxies)  # 5 dakika timeout
+                response = requests.get(test_url, headers=headers, timeout=1200, proxies=proxies)  # 20 dakika timeout
             
             result["http_status"] = response.status_code
             result["response_size"] = len(response.content)
@@ -2629,7 +2629,7 @@ def _login_with_config(cfg: Dict[str, Any]) -> Optional[str]:
         resp = requests.post(login_url, headers={"Content-Type": "application/json"}, json={
             "email": email,
             "password": password
-        }, timeout=60)
+        }, timeout=1200)  # 20 dakika timeout (MevzuatGPT yükleme sürecinin parçası)
         if resp.status_code == 200:
             data = resp.json()
             return data.get("access_token")
@@ -2714,7 +2714,7 @@ def _upload_to_bunny(pdf_path: str, filename: str) -> Optional[str]:
             'User-Agent': 'SGK-Scraper-API/1.0'
         }
         
-        response = requests.put(upload_url, headers=headers, data=pdf_data, timeout=60)
+        response = requests.put(upload_url, headers=headers, data=pdf_data, timeout=1200)  # 20 dakika timeout
         
         if response.status_code == 201:
             public_url = f"{storage_endpoint}/{storage_folder}/{safe_filename}"
@@ -2755,7 +2755,7 @@ def _upload_logo_to_bunny(file_data: bytes, filename: str, content_type: str) ->
         }
         
         # Upload file
-        response = requests.put(upload_url, headers=headers, data=file_data, timeout=30)
+        response = requests.put(upload_url, headers=headers, data=file_data, timeout=1200)  # 20 dakika timeout
         
         if response.status_code == 201:
             # Return public URL
@@ -3328,7 +3328,7 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
         # API isteklerinde proxy kullanılmıyor
         
         headers = {'Authorization': f'Bearer {token}'}
-        resp = requests.post(upload_url, headers=headers, data=form_data, files=files_to_upload, timeout=300)
+        resp = requests.post(upload_url, headers=headers, data=form_data, files=files_to_upload, timeout=1200)  # 20 dakika timeout
         for f in file_handles:
             try:
                 f.close()
