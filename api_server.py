@@ -3226,45 +3226,45 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
     else:
         # use_ocr is None: Otomatik karar - Eski algoritma
         # Önce PDF yapısını analiz et
-        pdf_structure = processor.analyze_pdf_structure(pdf_path)
-        total_pages = pdf_structure['total_pages']
-        
-        # Resim formatı kontrolü: Eğer PDF resim formatındaysa direkt OCR ile başla
-        text_coverage = pdf_structure.get('text_coverage', 0.0)
-        has_text = pdf_structure.get('has_text', False)
-        needs_ocr = pdf_structure.get('needs_ocr', False)
-        
-        # Ortalama sayfa başına metin miktarını kontrol et (sadece başlıklar mı yoksa gerçek içerik mi?)
-        avg_text_per_page = 0
-        if total_pages > 0:
-            # Hızlı kontrol: İlk 3 sayfadan ortalama metin miktarını hesapla
-            import pdfplumber
-            from io import BytesIO
-            with open(pdf_path, 'rb') as f:
-                pdf_bytes = f.read()
-            pdf_file_obj = BytesIO(pdf_bytes)
-            with pdfplumber.open(pdf_file_obj) as pdf:
-                quick_check_pages = min(3, total_pages)
-                quick_total_text = 0
-                for page_num in range(quick_check_pages):
-                    try:
-                        page = pdf.pages[page_num]
-                        page_text = page.extract_text()
-                        if page_text:
-                            quick_total_text += len(page_text.strip())
-                    except Exception:
-                        pass
-                avg_text_per_page = quick_total_text / quick_check_pages if quick_check_pages > 0 else 0
-        
-        # Resim formatı: Metin yoksa veya çok az metin varsa (%30'dan az) veya OCR gerekliyse
-        # %30 eşiği: Metin kapsamı düşükse kalite zayıf olabilir, OCR daha iyi sonuç verebilir
-        # Ayrıca, eğer metin varsa ama çok azsa (sadece başlıklar), OCR gerekli
-        is_image_pdf = not has_text or text_coverage < 0.3 or needs_ocr or (has_text and avg_text_per_page < 300)
-        
-        use_ocr = is_image_pdf  # Resim formatındaysa OCR kullan
-        
-        if is_image_pdf:
-            print(f"📸 PDF resim formatında tespit edildi (kapsam: %{text_coverage*100:.1f}, ortalama: {avg_text_per_page:.0f} karakter/sayfa). OCR ile tüm {total_pages} sayfa işlenecek (sınırlama olmadan)...")
+    pdf_structure = processor.analyze_pdf_structure(pdf_path)
+    total_pages = pdf_structure['total_pages']
+    
+    # Resim formatı kontrolü: Eğer PDF resim formatındaysa direkt OCR ile başla
+    text_coverage = pdf_structure.get('text_coverage', 0.0)
+    has_text = pdf_structure.get('has_text', False)
+    needs_ocr = pdf_structure.get('needs_ocr', False)
+    
+    # Ortalama sayfa başına metin miktarını kontrol et (sadece başlıklar mı yoksa gerçek içerik mi?)
+    avg_text_per_page = 0
+    if total_pages > 0:
+        # Hızlı kontrol: İlk 3 sayfadan ortalama metin miktarını hesapla
+        import pdfplumber
+        from io import BytesIO
+        with open(pdf_path, 'rb') as f:
+            pdf_bytes = f.read()
+        pdf_file_obj = BytesIO(pdf_bytes)
+        with pdfplumber.open(pdf_file_obj) as pdf:
+            quick_check_pages = min(3, total_pages)
+            quick_total_text = 0
+            for page_num in range(quick_check_pages):
+                try:
+                    page = pdf.pages[page_num]
+                    page_text = page.extract_text()
+                    if page_text:
+                        quick_total_text += len(page_text.strip())
+                except Exception:
+                    pass
+            avg_text_per_page = quick_total_text / quick_check_pages if quick_check_pages > 0 else 0
+    
+    # Resim formatı: Metin yoksa veya çok az metin varsa (%30'dan az) veya OCR gerekliyse
+    # %30 eşiği: Metin kapsamı düşükse kalite zayıf olabilir, OCR daha iyi sonuç verebilir
+    # Ayrıca, eğer metin varsa ama çok azsa (sadece başlıklar), OCR gerekli
+    is_image_pdf = not has_text or text_coverage < 0.3 or needs_ocr or (has_text and avg_text_per_page < 300)
+    
+    use_ocr = is_image_pdf  # Resim formatındaysa OCR kullan
+    
+    if is_image_pdf:
+        print(f"📸 PDF resim formatında tespit edildi (kapsam: %{text_coverage*100:.1f}, ortalama: {avg_text_per_page:.0f} karakter/sayfa). OCR ile tüm {total_pages} sayfa işlenecek (sınırlama olmadan)...")
     
     use_ai = bool(api_key)
     if use_ai:
@@ -3312,43 +3312,103 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
 
 
 def _split_pdfs(pdf_path: str, sections: List[Dict[str, int]], metadata_list: List[Dict[str, Any]]) -> str:
+    """PDF'leri bölümlere ayırır ve chunk'lar oluşturur"""
+    print(f"   📂 PDF dosyası: {pdf_path}")
+    print(f"   📊 Toplam bölüm: {len(sections)}")
+    
     output_dir = create_output_directories()
+    print(f"   📁 Output dizini oluşturuldu: {output_dir}")
+    
     from pypdf import PdfReader, PdfWriter
     with open(pdf_path, 'rb') as source:
         reader = PdfReader(source)
-        for section, metadata in zip(sections, metadata_list):
+        total_pages = len(reader.pages)
+        print(f"   📄 Kaynak PDF sayfa sayısı: {total_pages}")
+        
+        for i, (section, metadata) in enumerate(zip(sections, metadata_list), 1):
+            start_page = section['start_page']
+            end_page = section['end_page']
+            output_filename = metadata.get('output_filename', f'section_{i}.pdf')
+            
+            print(f"   📎 [{i}/{len(sections)}] Bölüm işleniyor: {output_filename}")
+            print(f"      📄 Sayfa aralığı: {start_page}-{end_page}")
+            
             writer = PdfWriter()
-            for page_num in range(section['start_page'] - 1, section['end_page']):
+            pages_added = 0
+            for page_num in range(start_page - 1, end_page):
                 if page_num < len(reader.pages):
                     writer.add_page(reader.pages[page_num])
-            out_path = Path(output_dir) / metadata['output_filename']
-            with open(out_path, 'wb') as f:
-                writer.write(f)
+                    pages_added += 1
+            
+            print(f"      ✅ {pages_added} sayfa eklendi")
+            
+            out_path = Path(output_dir) / output_filename
+            try:
+                with open(out_path, 'wb') as f:
+                    writer.write(f)
+                file_size = out_path.stat().st_size
+                print(f"      💾 Dosya kaydedildi: {file_size:,} bytes")
+            except Exception as e:
+                print(f"      ❌ Dosya kaydetme hatası: {str(e)}")
+                raise
+    
     # JSON metadata dosyası da kaydedilsin
     json_path = Path(output_dir) / "pdf_sections_metadata.json"
-    with open(json_path, 'w', encoding='utf-8') as jf:
-        json.dump({"pdf_sections": metadata_list}, jf, ensure_ascii=False, indent=2)
+    print(f"   📋 Metadata JSON dosyası kaydediliyor: {json_path}")
+    try:
+        with open(json_path, 'w', encoding='utf-8') as jf:
+            json.dump({"pdf_sections": metadata_list}, jf, ensure_ascii=False, indent=2)
+        json_size = json_path.stat().st_size
+        print(f"   ✅ Metadata JSON kaydedildi: {json_size:,} bytes")
+    except Exception as e:
+        print(f"   ⚠️ Metadata JSON kaydetme hatası: {str(e)}")
+    
     return output_dir
 
 
 def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str, institution: str, belge_adi: str, metadata_list: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """MevzuatGPT'ye bulk upload yapar"""
     try:
+        print(f"🔧 [MevzuatGPT Upload] Başlatılıyor...")
+        print(f"   📂 Output dizini: {output_dir}")
+        print(f"   📋 Kategori: {category}")
+        print(f"   🏢 Kurum: {institution}")
+        print(f"   📄 Belge: {belge_adi}")
+        print(f"   📊 Metadata sayısı: {len(metadata_list)}")
+        
         api_base_url = cfg.get("api_base_url")
         if not api_base_url:
+            print("❌ [MevzuatGPT Upload] API base URL bulunamadı!")
             return None
+        
         upload_url = f"{api_base_url.rstrip('/')}/api/admin/documents/bulk-upload"
+        print(f"🌐 [MevzuatGPT Upload] Upload URL: {upload_url}")
+        
+        # PDF dosyalarını bul
+        print(f"📁 [MevzuatGPT Upload] PDF dosyaları aranıyor: {output_dir}")
+        pdf_files = list(sorted(Path(output_dir).glob('*.pdf')))
+        print(f"   📄 Bulunan PDF sayısı: {len(pdf_files)}")
+        
+        if len(pdf_files) == 0:
+            print("❌ [MevzuatGPT Upload] Yüklenecek PDF dosyası bulunamadı!")
+            return None
+        
         files_to_upload = []
         file_handles = []
-        for pdf_file in sorted(Path(output_dir).glob('*.pdf')):
+        for i, pdf_file in enumerate(pdf_files, 1):
+            print(f"   📎 [{i}/{len(pdf_files)}] PDF dosyası hazırlanıyor: {pdf_file.name}")
+            try:
             f = open(pdf_file, 'rb')
             file_handles.append(f)
             files_to_upload.append(('files', (pdf_file.name, f, 'application/pdf')))
-
-        form_data = {
-            'category': category,
-            'institution': institution,
-            'belge_adi': belge_adi,
-            'metadata': json.dumps({"pdf_sections": [
+            except Exception as e:
+                print(f"   ⚠️ [{i}/{len(pdf_files)}] PDF dosyası açılamadı: {pdf_file.name} - {str(e)}")
+        
+        print(f"✅ [MevzuatGPT Upload] {len(files_to_upload)} PDF dosyası hazırlandı")
+        
+        # Metadata hazırla
+        print(f"📋 [MevzuatGPT Upload] Metadata hazırlanıyor...")
+        metadata_json = json.dumps({"pdf_sections": [
                 {
                     "output_filename": m.get("output_filename", ""),
                     "title": m.get("title", ""),
@@ -3356,20 +3416,53 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
                     "keywords": m.get("keywords", "")
                 } for m in metadata_list
             ]}, ensure_ascii=False)
+        print(f"   📊 Metadata JSON uzunluğu: {len(metadata_json)} karakter")
+        
+        form_data = {
+            'category': category,
+            'institution': institution,
+            'belge_adi': belge_adi,
+            'metadata': metadata_json
         }
-        # API isteklerinde proxy kullanılmıyor
         
         headers = {'Authorization': f'Bearer {token}'}
-        resp = requests.post(upload_url, headers=headers, data=form_data, files=files_to_upload, timeout=1200)  # 20 dakika timeout
+        print(f"🚀 [MevzuatGPT Upload] API'ye istek gönderiliyor...")
+        print(f"   ⏱️ Timeout: 1200 saniye (20 dakika)")
+        
+        resp = requests.post(upload_url, headers=headers, data=form_data, files=files_to_upload, timeout=1200)
+        
+        # Dosya handle'larını kapat
         for f in file_handles:
             try:
                 f.close()
             except Exception:
                 pass
+        
+        print(f"📡 [MevzuatGPT Upload] API yanıtı alındı")
+        print(f"   📊 Status Code: {resp.status_code}")
+        print(f"   📝 Response uzunluğu: {len(resp.text)} karakter")
+        
         if resp.status_code == 200:
-            return resp.json()
+            response_data = resp.json()
+            print(f"✅ [MevzuatGPT Upload] Başarılı!")
+            print(f"   📦 Response: {json.dumps(response_data, ensure_ascii=False, indent=2)[:500]}...")
+            return response_data
+        else:
+            print(f"❌ [MevzuatGPT Upload] Başarısız!")
+            print(f"   📊 Status Code: {resp.status_code}")
+            print(f"   📝 Response: {resp.text[:1000]}")
         return {"status_code": resp.status_code, "text": resp.text}
+            
+    except requests.exceptions.Timeout as e:
+        print(f"❌ [MevzuatGPT Upload] Timeout hatası: {str(e)}")
+        return {"error": f"Timeout: {str(e)}"}
+    except requests.exceptions.RequestException as e:
+        print(f"❌ [MevzuatGPT Upload] Request hatası: {str(e)}")
+        return {"error": f"Request error: {str(e)}"}
     except Exception as e:
+        print(f"❌ [MevzuatGPT Upload] Beklenmeyen hata: {str(e)}")
+        import traceback
+        print(f"   📋 Traceback: {traceback.format_exc()}")
         return {"error": str(e)}
 
 
@@ -3433,45 +3526,124 @@ async def process_item(req: ProcessRequest):
         print("✅ PDF indirme başarılı")
 
         # Analiz ve metadata (tüm modlar için: MevzuatGPT, Portal ve Tamamı)
-        print("🔍 PDF analiz ediliyor...")
+        print("=" * 80)
+        print("🔍 [AŞAMA 0] PDF ANALİZİ")
+        print("=" * 80)
+        print(f"   📄 PDF dosyası: {pdf_path}")
+        
         api_key = _get_deepseek_api_key()
         if not api_key:
-            # DeepSeek anahtarı yoksa analiz kalitesiz olacağından bildirim yap
-            print("[warn] DeepSeek API anahtarı bulunamadı, manuel bölümleme ve basit metadata kullanılacak.")
+            print("   ⚠️ [AŞAMA 0] DeepSeek API anahtarı bulunamadı, manuel bölümleme ve basit metadata kullanılacak.")
+        else:
+            print(f"   ✅ [AŞAMA 0] DeepSeek API anahtarı bulundu")
+        
         pdf_base_name = "document"
         # Kullanıcının OCR tercihini al (tüm modlar için geçerli: m, p, t)
         use_ocr = req.use_ocr if hasattr(req, 'use_ocr') else None
         if use_ocr is not None:
-            print(f"📸 OCR kullanımı: {'Aktif (tüm sayfalar OCR ile işlenecek)' if use_ocr else 'Pasif (normal metin çıkarma)'}")
-        analysis_result = _analyze_and_prepare_headless(pdf_path, pdf_base_name, api_key, use_ocr=use_ocr)
-        sections = analysis_result['sections']
-        metadata_list = analysis_result['metadata_list']
-        print("✅ PDF analiz başarılı")
+            print(f"   📸 OCR kullanımı: {'Aktif (tüm sayfalar OCR ile işlenecek)' if use_ocr else 'Pasif (normal metin çıkarma)'}")
+        else:
+            print(f"   🔄 OCR kullanımı: Otomatik karar")
+        
+        print(f"   🔄 Analiz başlatılıyor...")
+        try:
+            analysis_result = _analyze_and_prepare_headless(pdf_path, pdf_base_name, api_key, use_ocr=use_ocr)
+            sections = analysis_result['sections']
+            metadata_list = analysis_result['metadata_list']
+            total_pages = analysis_result.get('total_pages', 0)
+            
+            print(f"✅ [AŞAMA 0] PDF analiz başarılı")
+            print(f"   📊 Toplam sayfa: {total_pages}")
+            print(f"   📋 Bölüm sayısı: {len(sections)}")
+            print(f"   📝 Metadata sayısı: {len(metadata_list)}")
+            
+            # Bölüm özeti
+            for i, section in enumerate(sections[:5], 1):  # İlk 5 bölümü göster
+                print(f"      [{i}] Sayfa {section.get('start_page', '?')}-{section.get('end_page', '?')}")
+            if len(sections) > 5:
+                print(f"      ... ve {len(sections) - 5} bölüm daha")
+                
+        except Exception as e:
+            print(f"❌ [AŞAMA 0] PDF analiz hatası: {str(e)}")
+            import traceback
+            print(f"   📋 Traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"PDF analiz hatası: {str(e)}")
 
         # PDF'leri böl ve çıktıyı oluştur (sadece 'm' ve 't' modları için)
         output_dir = None
         if mode in ["m", "t"]:
-            print("📄 PDF bölümleme yapılıyor...")
+            print("=" * 80)
+            print("📄 [AŞAMA 1] PDF BÖLÜMLEME")
+            print("=" * 80)
+            print(f"   📊 Bölüm sayısı: {len(sections)}")
+            print(f"   📋 Metadata sayısı: {len(metadata_list)}")
+            try:
             output_dir = _split_pdfs(pdf_path, sections, metadata_list)
-            print("✅ PDF bölümleme başarılı")
+                print(f"✅ [AŞAMA 1] PDF bölümleme başarılı")
+                print(f"   📂 Output dizini: {output_dir}")
+                
+                # Oluşturulan dosyaları kontrol et
+                pdf_files = list(Path(output_dir).glob('*.pdf'))
+                print(f"   📄 Oluşturulan PDF sayısı: {len(pdf_files)}")
+                for pdf_file in pdf_files:
+                    file_size = pdf_file.stat().st_size
+                    print(f"      - {pdf_file.name} ({file_size:,} bytes)")
+            except Exception as e:
+                print(f"❌ [AŞAMA 1] PDF bölümleme hatası: {str(e)}")
+                import traceback
+                print(f"   📋 Traceback: {traceback.format_exc()}")
+                raise HTTPException(status_code=500, detail=f"PDF bölümleme hatası: {str(e)}")
         else:
             print("⏭️ PDF bölümleme atlandı (Portal modu)")
 
         # MevzuatGPT'ye yükleme (sadece 'm' ve 't' modları için)
         upload_resp = None
         if mode in ["m", "t"]:
-            print("📤 PDF'ler MevzuatGPT'ye yükleniyor...")
+            print("=" * 80)
+            print("📤 [AŞAMA 2] MEVZUATGPT'YE YÜKLEME")
+            print("=" * 80)
+            
+            # Config kontrolü
+            print("🔧 [AŞAMA 2.1] Config yükleniyor...")
             cfg = _load_config()
-            if cfg:
+            if not cfg:
+                print("❌ [AŞAMA 2.1] Config bulunamadı!")
+                raise HTTPException(status_code=500, detail="Config dosyası bulunamadı")
+            print(f"✅ [AŞAMA 2.1] Config yüklendi")
+            print(f"   🌐 API Base URL: {cfg.get('api_base_url', 'N/A')}")
+            
+            # Login kontrolü
+            print("🔐 [AŞAMA 2.2] MevzuatGPT'ye login yapılıyor...")
                 token = _login_with_config(cfg)
-                if token:
+            if not token:
+                print("❌ [AŞAMA 2.2] Login başarısız!")
+                raise HTTPException(status_code=500, detail="MevzuatGPT login başarısız")
+            print(f"✅ [AŞAMA 2.2] Login başarılı")
+            print(f"   🔑 Token uzunluğu: {len(token)} karakter")
+            
+            # Upload işlemi
+            print("📤 [AŞAMA 2.3] Bulk upload başlatılıyor...")
+            if not output_dir:
+                print("❌ [AŞAMA 2.3] Output dizini bulunamadı!")
+                raise HTTPException(status_code=500, detail="Output dizini bulunamadı")
+            
                     upload_resp = _upload_bulk(cfg, token, output_dir, category, institution, document_name, metadata_list)
+            
                     if upload_resp:
-                        print("✅ PDF'ler MevzuatGPT'ye yüklendi")
+                # Response kontrolü
+                if "error" in upload_resp:
+                    print(f"❌ [AŞAMA 2.3] Upload hatası: {upload_resp.get('error')}")
+                    raise HTTPException(status_code=500, detail=f"Upload hatası: {upload_resp.get('error')}")
+                elif upload_resp.get("status_code") and upload_resp.get("status_code") != 200:
+                    print(f"❌ [AŞAMA 2.3] Upload başarısız: HTTP {upload_resp.get('status_code')}")
+                    print(f"   📝 Response: {upload_resp.get('text', '')[:500]}")
+                    raise HTTPException(status_code=500, detail=f"Upload başarısız: HTTP {upload_resp.get('status_code')}")
                     else:
-                        print("⚠️ PDF yükleme başarısız")
+                    print(f"✅ [AŞAMA 2.3] Upload başarılı!")
+                    print(f"   📦 Response keys: {list(upload_resp.keys()) if isinstance(upload_resp, dict) else 'N/A'}")
             else:
-                print("⚠️ Config bulunamadı, PDF yükleme atlandı")
+                print("❌ [AŞAMA 2.3] Upload response None döndü!")
+                raise HTTPException(status_code=500, detail="Upload response None")
         else:
             print("⏭️ MevzuatGPT yükleme atlandı (Portal modu)")
 
