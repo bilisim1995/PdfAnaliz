@@ -4,6 +4,27 @@ import tempfile
 import math
 from typing import List, Dict, Any, Optional
 import os
+import shutil
+
+# Poppler yolunu ayarla
+POPPLER_PATH = None
+poppler_paths = [
+    '/usr/bin',  # Linux standart yolu
+    '/usr/local/bin',  # Alternatif Linux yolu
+    '/opt/homebrew/bin',  # macOS Homebrew yolu
+]
+
+# Poppler yolunu bul
+for path in poppler_paths:
+    if os.path.exists(os.path.join(path, 'pdftoppm')):
+        POPPLER_PATH = path
+        break
+
+# Eğer hiçbir standart yolda bulunamazsa, which komutu ile bulmayı dene
+if POPPLER_PATH is None:
+    pdftoppm_cmd = shutil.which('pdftoppm')
+    if pdftoppm_cmd:
+        POPPLER_PATH = os.path.dirname(pdftoppm_cmd)
 
 # Tesseract OCR yolunu ayarla
 try:
@@ -121,13 +142,18 @@ class PDFProcessor:
             
             # PDF sayfasını görüntüye çevir
             try:
-                images = convert_from_path(
-                    pdf_path,
-                    first_page=page_num + 1,
-                    last_page=page_num + 1,
-                    dpi=300,  # Yüksek çözünürlük için
-                    thread_count=1  # Tek sayfa için thread gerekmez
-                )
+                # Poppler yolunu belirt (Ubuntu'da görünmüyorsa)
+                convert_kwargs = {
+                    'first_page': page_num + 1,
+                    'last_page': page_num + 1,
+                    'dpi': 300,  # Yüksek çözünürlük için
+                    'thread_count': 1  # Tek sayfa için thread gerekmez
+                }
+                # Poppler yolu bulunduysa ekle
+                if POPPLER_PATH:
+                    convert_kwargs['poppler_path'] = POPPLER_PATH
+                
+                images = convert_from_path(pdf_path, **convert_kwargs)
             except Exception as pdf_error:
                 error_msg = str(pdf_error).lower()
                 if "poppler" in error_msg or "pdftoppm" in error_msg:
