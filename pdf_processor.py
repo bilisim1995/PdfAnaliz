@@ -5,6 +5,41 @@ import math
 from typing import List, Dict, Any, Optional
 import os
 
+# Tesseract OCR yolunu ayarla
+try:
+    import pytesseract
+    # Tesseract yolunu elle belirtiyoruz
+    # Linux'ta standart yol genellikle burasıdır:
+    # Eğer /usr/bin/tesseract orada yoksa, terminale 'which tesseract' yazarak gerçek yolu öğrenip onu yazın
+    tesseract_paths = [
+        '/usr/bin/tesseract',  # Linux standart yolu
+        '/usr/local/bin/tesseract',  # Alternatif Linux yolu
+        '/opt/homebrew/bin/tesseract',  # macOS Homebrew yolu
+    ]
+    
+    # Tesseract yolunu bul ve ayarla
+    tesseract_found = False
+    for path in tesseract_paths:
+        if os.path.exists(path):
+            pytesseract.pytesseract.tesseract_cmd = path
+            tesseract_found = True
+            break
+    
+    # Eğer hiçbir standart yolda bulunamazsa, which komutu ile bulmayı dene
+    if not tesseract_found:
+        import shutil
+        tesseract_cmd = shutil.which('tesseract')
+        if tesseract_cmd:
+            pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+            tesseract_found = True
+    
+    if not tesseract_found:
+        # Tesseract bulunamadı, varsayılan yolu kullan (pytesseract kendi bulmaya çalışacak)
+        pass
+except ImportError:
+    # pytesseract kurulu değil, sorun değil (opsiyonel bağımlılık)
+    pass
+
 class PDFProcessor:
     """PDF işleme ve bölümlendirme sınıfı"""
     
