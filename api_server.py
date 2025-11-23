@@ -1,7 +1,7 @@
 """
 FastAPI Server for SGK Scraper
 """
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
