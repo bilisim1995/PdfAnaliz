@@ -3222,22 +3222,6 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
         total_pages = pdf_structure['total_pages']
         print(f"📄 OCR kullanımı kullanıcı tarafından devre dışı bırakıldı: Normal metin çıkarma kullanılacak")
     else:
-        # use_ocr is None: Otomatik karar - Tam analiz yap
-        pdf_structure = processor.analyze_pdf_structure(pdf_path)
-        total_pages = pdf_structure['total_pages']
-        # Kullanıcı OCR kullanımını açıkça istedi: Direkt OCR'a geç, metin kontrolü yapma
-        if not processor._check_ocr_available():
-            raise HTTPException(
-                status_code=500,
-                detail="OCR kullanımı isteniyor ancak Tesseract OCR kurulu değil. Lütfen 'apt-get install tesseract-ocr tesseract-ocr-tur' komutunu çalıştırın."
-            )
-        print(f"📸 OCR kullanımı kullanıcı tarafından belirlendi: Tüm {total_pages} sayfa OCR ile işlenecek (metin kontrolü yapılmadan)")
-        # use_ocr zaten True, direkt devam et
-    elif use_ocr is False:
-        # Kullanıcı OCR kullanımını açıkça devre dışı bıraktı
-        print(f"📄 OCR kullanımı kullanıcı tarafından devre dışı bırakıldı: Normal metin çıkarma kullanılacak")
-        # use_ocr zaten False, direkt devam et
-    else:
         # use_ocr is None: Otomatik karar - Eski algoritma
         # Resim formatı kontrolü: Eğer PDF resim formatındaysa direkt OCR ile başla
         text_coverage = pdf_structure.get('text_coverage', 0.0)
