@@ -2696,23 +2696,36 @@ def _create_url_slug(text: str) -> str:
 def _upload_to_bunny(pdf_path: str, filename: str) -> Optional[str]:
     """PDF'i Bunny.net'e yükler ve public URL döner"""
     try:
+        print(f"📤 [Bunny.net Upload] Başlatılıyor...")
+        print(f"   📄 Dosya: {pdf_path}")
+        print(f"   📝 Filename: {filename}")
+        
         api_key = os.getenv("BUNNY_STORAGE_API_KEY")
         storage_zone = os.getenv("BUNNY_STORAGE_ZONE", "mevzuatgpt")
         storage_region = os.getenv("BUNNY_STORAGE_REGION", "storage.bunnycdn.com")
         storage_endpoint = os.getenv("BUNNY_STORAGE_ENDPOINT", "https://cdn.mevzuatgpt.org")
         storage_folder = os.getenv("BUNNY_STORAGE_FOLDER", "portal")
         
+        print(f"   🌐 Storage Zone: {storage_zone}")
+        print(f"   🌐 Storage Region: {storage_region}")
+        print(f"   📂 Storage Folder: {storage_folder}")
+        
         if not api_key:
-            print("Bunny.net API anahtarı bulunamadı")
+            print("❌ [Bunny.net Upload] API anahtarı bulunamadı")
             return None
         
         # PDF dosyasını oku
+        print(f"   📖 PDF dosyası okunuyor...")
         with open(pdf_path, 'rb') as f:
             pdf_data = f.read()
+        file_size = len(pdf_data)
+        file_size_mb = round(file_size / (1024 * 1024), 2)
+        print(f"   ✅ Dosya okundu: {file_size:,} bytes ({file_size_mb} MB)")
         
         # URL-safe filename
         safe_filename = urllib.parse.quote(filename)
         upload_url = f"https://{storage_region}/{storage_zone}/{storage_folder}/{safe_filename}"
+        print(f"   🌐 Upload URL: {upload_url}")
         
         headers = {
             'AccessKey': api_key,
@@ -2720,18 +2733,36 @@ def _upload_to_bunny(pdf_path: str, filename: str) -> Optional[str]:
             'User-Agent': 'SGK-Scraper-API/1.0'
         }
         
+        print(f"   🚀 Bunny.net'e yükleme başlatılıyor...")
+        print(f"   ⏱️ Timeout: 1200 saniye (20 dakika)")
         response = requests.put(upload_url, headers=headers, data=pdf_data, timeout=1200)  # 20 dakika timeout
+        
+        print(f"   📡 Response alındı")
+        print(f"   📊 Status Code: {response.status_code}")
+        print(f"   📋 Response headers: {dict(response.headers)}")
         
         if response.status_code == 201:
             public_url = f"{storage_endpoint}/{storage_folder}/{safe_filename}"
-            print(f"PDF başarıyla Bunny.net'e yüklendi: {public_url}")
+            print(f"✅ [Bunny.net Upload] Başarılı!")
+            print(f"   🔗 Public URL: {public_url}")
             return public_url
         else:
-            print(f"Bunny.net yükleme hatası: {response.status_code} - {response.text}")
+            print(f"❌ [Bunny.net Upload] Başarısız!")
+            print(f"   📝 Response body (ilk 500 karakter): {response.text[:500]}")
+            if len(response.text) > 500:
+                print(f"      ... (toplam {len(response.text)} karakter)")
             return None
             
+    except requests.exceptions.Timeout:
+        print(f"❌ [Bunny.net Upload] Zaman aşımı (20 dakika)")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"❌ [Bunny.net Upload] Ağ hatası: {str(e)}")
+        return None
     except Exception as e:
-        print(f"Bunny.net yükleme hatası: {str(e)}")
+        print(f"❌ [Bunny.net Upload] Beklenmeyen hata: {str(e)}")
+        import traceback
+        print(f"   📋 Traceback: {traceback.format_exc()}")
         return None
 
 
@@ -2877,44 +2908,71 @@ def _get_mongodb_client() -> Optional[MongoClient]:
 def _save_to_mongodb(metadata: Dict[str, Any], content: str) -> Optional[str]:
     """Metadata ve content'i MongoDB'ye kaydeder, metadata_id döner"""
     try:
+        print(f"💾 [MongoDB Save] Başlatılıyor...")
+        
         client = _get_mongodb_client()
         if not client:
+            print("❌ [MongoDB Save] MongoDB client bulunamadı")
             return None
         
         database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
         metadata_collection_name = os.getenv("MONGODB_METADATA_COLLECTION", "metadata")
         content_collection_name = os.getenv("MONGODB_CONTENT_COLLECTION", "content")
         
+        print(f"   🗄️ Database: {database_name}")
+        print(f"   📋 Metadata Collection: {metadata_collection_name}")
+        print(f"   📄 Content Collection: {content_collection_name}")
+        
         db = client[database_name]
         metadata_collection = db[metadata_collection_name]
         content_collection = db[content_collection_name]
         
         # Metadata kaydet
+        print(f"   📝 Metadata temizleniyor...")
         clean_metadata = {}
         for key, value in metadata.items():
             if value is not None and value != '':
                 clean_metadata[key] = value
         
+        print(f"   📊 Metadata keys: {list(clean_metadata.keys())}")
+        print(f"   📄 PDF Adı: {clean_metadata.get('pdf_adi', 'N/A')}")
+        print(f"   🏢 Kurum ID: {clean_metadata.get('kurum_id', 'N/A')}")
+        print(f"   📂 Belge Türü: {clean_metadata.get('belge_turu', 'N/A')}")
+        print(f"   📊 Sayfa Sayısı: {clean_metadata.get('sayfa_sayisi', 'N/A')}")
+        print(f"   💾 Dosya Boyutu: {clean_metadata.get('dosya_boyutu_mb', 'N/A')} MB")
+        
         clean_metadata['olusturulma_tarihi'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
+        print(f"   💾 Metadata MongoDB'ye kaydediliyor...")
         metadata_result = metadata_collection.insert_one(clean_metadata)
         metadata_id = str(metadata_result.inserted_id)
+        print(f"   ✅ Metadata kaydedildi: metadata_id={metadata_id}")
         
         # Content kaydet
+        content_length = len(content)
+        content_length_kb = round(content_length / 1024, 2)
+        print(f"   📄 Content hazırlanıyor...")
+        print(f"      📊 Content uzunluğu: {content_length:,} karakter ({content_length_kb} KB)")
+        
         content_doc = {
             'metadata_id': ObjectId(metadata_id),
             'icerik': content,
             'olusturulma_tarihi': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
         
-        content_collection.insert_one(content_doc)
+        print(f"   💾 Content MongoDB'ye kaydediliyor...")
+        content_result = content_collection.insert_one(content_doc)
+        content_id = str(content_result.inserted_id)
+        print(f"   ✅ Content kaydedildi: content_id={content_id}")
         
         client.close()
-        print(f"MongoDB'ye kaydedildi: metadata_id={metadata_id}")
+        print(f"✅ [MongoDB Save] Başarılı! metadata_id={metadata_id}")
         return metadata_id
         
     except Exception as e:
-        print(f"MongoDB kayıt hatası: {str(e)}")
+        print(f"❌ [MongoDB Save] Hata: {str(e)}")
+        import traceback
+        print(f"   📋 Traceback: {traceback.format_exc()}")
         return None
 
 
@@ -3717,11 +3775,12 @@ async def process_item(req: ProcessRequest):
         # Portal'a yükleme (sadece 'p' ve 't' modları için)
         mongodb_metadata_id = None
         if mode in ["p", "t"]:
+            print("=" * 80)
+            print("📦 [AŞAMA 3] PORTAL'A YÜKLEME")
+            print("=" * 80)
             try:
-                print("📦 MongoDB ve Bunny.net işlemleri başlatılıyor...")
-                print("📤 Ana PDF Bunny.net'e yükleniyor...")
-                
                 # PDF bilgilerini al
+                print("📊 [AŞAMA 3.1] PDF bilgileri alınıyor...")
                 processor = PDFProcessor()
                 pdf_info = processor.analyze_pdf_structure(pdf_path)
                 total_pages = pdf_info.get('total_pages', 0)
@@ -3729,21 +3788,28 @@ async def process_item(req: ProcessRequest):
                 # PDF dosya boyutu (MB)
                 pdf_size_bytes = os.path.getsize(pdf_path)
                 pdf_size_mb = round(pdf_size_bytes / (1024 * 1024), 2)
+                print(f"   ✅ PDF bilgileri alındı")
+                print(f"      📄 Toplam sayfa: {total_pages}")
+                print(f"      💾 Dosya boyutu: {pdf_size_bytes:,} bytes ({pdf_size_mb} MB)")
                 
                 # Keywords ve description'ları topla
+                print("📋 [AŞAMA 3.2] Keywords ve descriptions toplanıyor...")
                 all_keywords = []
                 all_descriptions = []
                 
                 # Mode'a göre metadata kaynağını belirle
                 if mode == "t" and output_dir:
                     # 't' modunda pdf_sections_metadata.json'dan al
+                    print("   📂 Metadata kaynağı: pdf_sections_metadata.json")
                     metadata_json_path = Path(output_dir) / "pdf_sections_metadata.json"
                     if metadata_json_path.exists():
                         try:
+                            print(f"   📄 JSON dosyası okunuyor: {metadata_json_path}")
                             with open(metadata_json_path, 'r', encoding='utf-8') as f:
                                 metadata_json = json.load(f)
                                 pdf_sections = metadata_json.get('pdf_sections', [])
-                                for section in pdf_sections:
+                                print(f"   📊 Bölüm sayısı: {len(pdf_sections)}")
+                                for i, section in enumerate(pdf_sections, 1):
                                     keywords = section.get('keywords', '')
                                     description = section.get('description', '')
                                     if keywords:
@@ -3755,11 +3821,16 @@ async def process_item(req: ProcessRequest):
                                             all_keywords.extend(keywords)
                                     if description:
                                         all_descriptions.append(description.strip())
+                            print(f"   ✅ JSON'dan {len(pdf_sections)} bölüm işlendi")
                         except Exception as e:
-                            print(f"Metadata JSON okuma hatası: {str(e)}")
+                            print(f"   ⚠️ Metadata JSON okuma hatası: {str(e)}")
+                    else:
+                        print(f"   ⚠️ JSON dosyası bulunamadı: {metadata_json_path}")
                 else:
                     # 'p' modunda veya json yoksa analiz sonuçlarından al
-                    for section_meta in metadata_list:
+                    print("   📂 Metadata kaynağı: Analiz sonuçları")
+                    print(f"   📊 Metadata list uzunluğu: {len(metadata_list)}")
+                    for i, section_meta in enumerate(metadata_list, 1):
                         keywords = section_meta.get('keywords', '')
                         description = section_meta.get('description', '')
                         if keywords:
@@ -3770,18 +3841,28 @@ async def process_item(req: ProcessRequest):
                                 all_keywords.extend(keywords)
                         if description:
                             all_descriptions.append(description.strip())
+                    print(f"   ✅ {len(metadata_list)} bölüm işlendi")
                 
                 # Keywords ve descriptions birleştir
                 combined_keywords = ', '.join(all_keywords) if all_keywords else ''
                 combined_description = ' '.join(all_descriptions) if all_descriptions else ''
                 
+                print(f"   📊 Toplanan keywords sayısı: {len(all_keywords)}")
+                print(f"   📊 Toplanan descriptions sayısı: {len(all_descriptions)}")
+                print(f"   📝 Combined keywords uzunluğu: {len(combined_keywords)} karakter")
+                print(f"   📝 Combined description uzunluğu: {len(combined_description)} karakter")
+                
                 # Açıklama karakter sınırı (max 500 karakter)
                 if len(combined_description) > 500:
                     combined_description = combined_description[:497] + "..."
+                    print(f"   ⚠️ Description 500 karaktere kısaltıldı")
                 
                 # Ana PDF'yi bunny.net'e yükle
+                print("📤 [AŞAMA 3.3] Ana PDF Bunny.net'e yükleniyor...")
                 # Dosya adını güvenli hale getir (Türkçe karakterleri İngilizce'ye çevir, kaldırma)
                 transliterated_name = _transliterate_turkish(document_name)
+                print(f"   📝 Orijinal ad: {document_name}")
+                print(f"   📝 Transliterated ad: {transliterated_name}")
                 # Sadece harfler, rakamlar, boşluk ve tireleri koru, diğer karakterleri kaldır
                 safe_pdf_adi = re.sub(r'[^a-zA-Z0-9\s-]', '', transliterated_name).strip()
                 # Boşlukları alt çizgi ile değiştir
@@ -3789,32 +3870,43 @@ async def process_item(req: ProcessRequest):
                 # Çoklu alt çizgileri tek alt çizgi yap
                 safe_pdf_adi = re.sub(r'_+', '_', safe_pdf_adi)
                 bunny_filename = f"{safe_pdf_adi}_{ObjectId()}.pdf"
+                print(f"   📝 Güvenli dosya adı: {bunny_filename}")
+                
                 pdf_url = _upload_to_bunny(pdf_path, bunny_filename)
+                
+                if pdf_url:
+                    print(f"✅ [AŞAMA 3.3] Ana PDF Bunny.net'e yüklendi")
+                    print(f"   🔗 PDF URL: {pdf_url}")
+                else:
+                    print("⚠️ [AŞAMA 3.3] Bunny.net yükleme başarısız, MongoDB işlemi devam ediyor...")
                 
                 # pdf_adi: tekrar başlık metni olarak kaydedilecek
                 pdf_adi = document_name
                 
                 # Slug oluştur (alt tire ile, sınırsız)
+                print("🔗 [AŞAMA 3.4] URL slug oluşturuluyor...")
                 url_slug = _create_url_slug(document_name)
+                print(f"   ✅ URL slug: {url_slug}")
                 
                 # Yükleme tarihi
                 now = datetime.now()
                 upload_date_str = now.strftime('%Y-%m-%d')
                 upload_datetime_str = now.isoformat()
-                
-                if pdf_url:
-                    print("✅ Ana PDF Bunny.net'e yüklendi")
-                else:
-                    print("⚠️ Bunny.net yükleme başarısız, MongoDB işlemi devam ediyor...")
+                print(f"   📅 Yükleme tarihi: {upload_datetime_str}")
                 
                 # PDF'den markdown formatında metin çıkar
-                print("📝 PDF içeriği markdown formatına çevriliyor...")
+                print("📝 [AŞAMA 3.5] PDF içeriği markdown formatına çevriliyor...")
                 markdown_content = _extract_pdf_text_markdown(pdf_path)
                 if not markdown_content:
                     markdown_content = "PDF içeriği çıkarılamadı."
+                    print("   ⚠️ PDF içeriği çıkarılamadı, varsayılan mesaj kullanılıyor")
+                else:
+                    content_length = len(markdown_content)
+                    content_length_kb = round(content_length / 1024, 2)
+                    print(f"   ✅ Markdown içerik oluşturuldu: {content_length:,} karakter ({content_length_kb} KB)")
                 
                 # Metadata oluştur
-                print("💾 MongoDB'ye kaydediliyor...")
+                print("💾 [AŞAMA 3.6] MongoDB metadata hazırlanıyor...")
                 mongodb_metadata = {
                     "pdf_adi": pdf_adi,
                     "kurum_id": req.kurum_id,  # Request'ten gelen kurum ID'sini kullan
@@ -3832,14 +3924,16 @@ async def process_item(req: ProcessRequest):
                     "yukleme_tarihi": upload_datetime_str,
                     "pdf_url": pdf_url or ""
                 }
+                print(f"   ✅ Metadata hazırlandı ({len(mongodb_metadata)} alan)")
                 
                 # MongoDB'ye kaydet
+                print("💾 [AŞAMA 3.7] MongoDB'ye kaydediliyor...")
                 mongodb_metadata_id = _save_to_mongodb(mongodb_metadata, markdown_content)
                 
                 if mongodb_metadata_id:
-                    print(f"✅ MongoDB kaydı başarılı: metadata_id={mongodb_metadata_id}")
+                    print(f"✅ [AŞAMA 3.7] MongoDB kaydı başarılı: metadata_id={mongodb_metadata_id}")
                 else:
-                    print("⚠️ MongoDB kaydı başarısız")
+                    print("❌ [AŞAMA 3.7] MongoDB kaydı başarısız")
                     
             except Exception as e:
                 print(f"⚠️ MongoDB/Bunny.net işlemleri sırasında hata: {str(e)}")
