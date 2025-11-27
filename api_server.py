@@ -48,6 +48,27 @@ from urllib.parse import urlparse, urljoin
 # .env dosyasını yükle
 load_dotenv()
 
+# Stdout'u line-buffered yap (anlık log görünümü için)
+import sys
+if sys.stdout.isatty():
+    # Terminal'de çalışıyorsa line buffering
+    sys.stdout.reconfigure(line_buffering=True)
+else:
+    # Systemd/journalctl için unbuffered
+    import os
+    os.environ['PYTHONUNBUFFERED'] = '1'
+    # sys.stdout'u flush etmek için wrapper
+    class Unbuffered:
+        def __init__(self, stream):
+            self.stream = stream
+        def write(self, data):
+            self.stream.write(data)
+            self.stream.flush()
+        def __getattr__(self, attr):
+            return getattr(self.stream, attr)
+    sys.stdout = Unbuffered(sys.stdout)
+    sys.stderr = Unbuffered(sys.stderr)
+
 # Swagger/OpenAPI kategorileri
 openapi_tags = [
     {
@@ -3304,12 +3325,12 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
     print("=" * 80)
     
     # Her zaman DeepSeek API ile bölümleme yap
-    analyzer = DeepSeekAnalyzer(api_key)
+        analyzer = DeepSeekAnalyzer(api_key)
     print("✅ [AŞAMA 0.2] DeepSeek Analyzer oluşturuldu")
     
-    try:
+        try:
         print("   🔄 Intelligent sections oluşturuluyor...")
-        sections = processor.create_intelligent_sections(pdf_path, total_pages, analyzer, use_ocr=use_ocr)
+            sections = processor.create_intelligent_sections(pdf_path, total_pages, analyzer, use_ocr=use_ocr)
         print(f"✅ [AŞAMA 0.2] {len(sections)} bölüm oluşturuldu (DeepSeek API ile)")
     except Exception as e:
         print(f"❌ [AŞAMA 0.2] Intelligent sections hatası: {str(e)}")
@@ -3323,7 +3344,7 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
     print("=" * 80)
     print("🔍 [AŞAMA 0.3] METADATA ÜRETİMİ (DeepSeek API ile)")
     print("=" * 80)
-    
+
     metadata_list: List[Dict[str, Any]] = []
     
     if use_ocr:
@@ -3340,9 +3361,9 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
             print(f"      🤖 DeepSeek API ile analiz yapılıyor...")
             try:
                 analysis = analyzer.analyze_section_content(section_text)
-                title = analysis.get('title', f'Bölüm {i + 1}')
-                description = analysis.get('description', 'Bu bölüm için açıklama oluşturulamadı.')
-                keywords = analysis.get('keywords', f'bölüm {i + 1}')
+            title = analysis.get('title', f'Bölüm {i + 1}')
+            description = analysis.get('description', 'Bu bölüm için açıklama oluşturulamadı.')
+            keywords = analysis.get('keywords', f'bölüm {i + 1}')
                 print(f"      ✅ Metadata üretildi: {title}")
             except Exception as e:
                 print(f"      ⚠️ DeepSeek API analiz hatası: {str(e)}")
@@ -3405,8 +3426,8 @@ def _split_pdfs(pdf_path: str, sections: List[Dict[str, int]], metadata_list: Li
             
             out_path = Path(output_dir) / output_filename
             try:
-                with open(out_path, 'wb') as f:
-                    writer.write(f)
+            with open(out_path, 'wb') as f:
+                writer.write(f)
                     file_size = out_path.stat().st_size
                     print(f"      💾 Dosya kaydedildi: {file_size:,} bytes")
             except Exception as e:
@@ -3417,8 +3438,8 @@ def _split_pdfs(pdf_path: str, sections: List[Dict[str, int]], metadata_list: Li
     json_path = Path(output_dir) / "pdf_sections_metadata.json"
     print(f"   📋 Metadata JSON dosyası kaydediliyor: {json_path}")
     try:
-        with open(json_path, 'w', encoding='utf-8') as jf:
-            json.dump({"pdf_sections": metadata_list}, jf, ensure_ascii=False, indent=2)
+    with open(json_path, 'w', encoding='utf-8') as jf:
+        json.dump({"pdf_sections": metadata_list}, jf, ensure_ascii=False, indent=2)
             json_size = json_path.stat().st_size
             print(f"   ✅ Metadata JSON kaydedildi: {json_size:,} bytes")
     except Exception as e:
@@ -3571,7 +3592,7 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
             print(f"      {resp.text[:2000]}")
             if len(resp.text) > 2000:
                 print(f"      ... (toplam {len(resp.text)} karakter)")
-            return {"status_code": resp.status_code, "text": resp.text}
+        return {"status_code": resp.status_code, "text": resp.text}
             
     except requests.exceptions.Timeout as e:
         print(f"❌ [MevzuatGPT Upload] Timeout hatası: {str(e)}")
@@ -3665,8 +3686,8 @@ async def process_item(req: ProcessRequest):
         print(f"   🔄 Analiz başlatılıyor...")
         try:
             analysis_result = _analyze_and_prepare_headless(pdf_path, pdf_base_name, api_key, use_ocr=use_ocr)
-            sections = analysis_result['sections']
-            metadata_list = analysis_result['metadata_list']
+        sections = analysis_result['sections']
+        metadata_list = analysis_result['metadata_list']
             total_pages = analysis_result.get('total_pages', 0)
             
             print(f"✅ [AŞAMA 0] PDF analiz başarılı")
@@ -3695,7 +3716,7 @@ async def process_item(req: ProcessRequest):
             print(f"   📊 Bölüm sayısı: {len(sections)}")
             print(f"   📋 Metadata sayısı: {len(metadata_list)}")
             try:
-                output_dir = _split_pdfs(pdf_path, sections, metadata_list)
+            output_dir = _split_pdfs(pdf_path, sections, metadata_list)
                 print(f"✅ [AŞAMA 1] PDF bölümleme başarılı")
                 print(f"   📂 Output dizini: {output_dir}")
                 
@@ -3731,7 +3752,7 @@ async def process_item(req: ProcessRequest):
             
             # Login kontrolü
             print("🔐 [AŞAMA 2.2] MevzuatGPT'ye login yapılıyor...")
-            token = _login_with_config(cfg)
+                token = _login_with_config(cfg)
             if not token:
                 print("❌ [AŞAMA 2.2] Login başarısız!")
                 raise HTTPException(status_code=500, detail="MevzuatGPT login başarısız")
@@ -3744,9 +3765,9 @@ async def process_item(req: ProcessRequest):
                 print("❌ [AŞAMA 2.3] Output dizini bulunamadı!")
                 raise HTTPException(status_code=500, detail="Output dizini bulunamadı")
             
-            upload_resp = _upload_bulk(cfg, token, output_dir, category, institution, document_name, metadata_list)
+                    upload_resp = _upload_bulk(cfg, token, output_dir, category, institution, document_name, metadata_list)
             
-            if upload_resp:
+                    if upload_resp:
                 # Response kontrolü
                 if "error" in upload_resp:
                     print(f"❌ [AŞAMA 2.3] Upload hatası: {upload_resp.get('error')}")
@@ -3755,7 +3776,7 @@ async def process_item(req: ProcessRequest):
                     print(f"❌ [AŞAMA 2.3] Upload başarısız: HTTP {upload_resp.get('status_code')}")
                     print(f"   📝 Response: {upload_resp.get('text', '')[:500]}")
                     raise HTTPException(status_code=500, detail=f"Upload başarısız: HTTP {upload_resp.get('status_code')}")
-                else:
+                    else:
                     print(f"✅ [AŞAMA 2.3] Upload başarılı!")
                     print(f"   📦 Response keys: {list(upload_resp.keys()) if isinstance(upload_resp, dict) else 'N/A'}")
                     if isinstance(upload_resp, dict):

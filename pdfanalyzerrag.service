@@ -8,6 +8,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=/opt/pdfanalyzerrag
 Environment="PATH=/opt/pdfanalyzerrag/venv/bin"
+Environment="PYTHONUNBUFFERED=1"
 EnvironmentFile=/opt/pdfanalyzerrag/.env
 ExecStart=/opt/pdfanalyzerrag/venv/bin/uvicorn api_server:app --host 0.0.0.0 --port 8000 --workers 4
 Restart=always
