@@ -203,7 +203,7 @@ class ProcessRequest(BaseModel):
     mode: str = Field(default="t", description="İşlem modu: 'm' (MevzuatGPT), 'p' (Portal), 't' (Tamamı)")
     category: Optional[str] = Field(default=None, description="Belge kategorisi (opsiyonel)")
     document_name: Optional[str] = Field(default=None, description="Belge adı (opsiyonel)")
-    use_ocr: Optional[bool] = Field(default=None, description="OCR kullanımı: True ise tüm sayfalar OCR ile işlenir, False ise OCR kullanılmaz, None ise otomatik karar verilir (varsayılan: None)")
+    use_ocr: bool = Field(default=False, description="OCR kullanımı: True ise tüm sayfalar OCR ile işlenir, False ise OCR kullanılmaz (varsayılan: False)")
 
     model_config = {
         "json_schema_extra": {
@@ -3255,19 +3255,32 @@ def _format_text_as_markdown(text: str) -> str:
         return text
 
 
-def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Optional[str], use_ocr: Optional[bool] = None) -> Dict[str, Any]:
+def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Optional[str], use_ocr: bool = False) -> Dict[str, Any]:
     """Streamlit'e bağlı olmadan analiz ve metadata üretimini yapar.
     
     Args:
         pdf_path: PDF dosya yolu
         pdf_base_name: PDF dosya adı (base)
-        api_key: DeepSeek API anahtarı (opsiyonel)
-        use_ocr: OCR kullanımı (True: zorunlu OCR, False: OCR kullanma, None: otomatik karar)
+        api_key: DeepSeek API anahtarı (zorunlu - bölümleme için gerekli)
+        use_ocr: OCR kullanımı (True: zorunlu OCR, False: OCR kullanma, varsayılan: False)
     """
+    print("=" * 80)
+    print("🔍 [AŞAMA 0.1] PDF ANALİZİ BAŞLATILIYOR")
+    print("=" * 80)
+    
+    # DeepSeek API anahtarı zorunlu
+    if not api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="DeepSeek API anahtarı bulunamadı. Bölümleme için DeepSeek API anahtarı zorunludur."
+        )
+    print("✅ [AŞAMA 0.1] DeepSeek API anahtarı bulundu")
+    
     processor = PDFProcessor()
     
-    # Kullanıcı OCR kullanımını belirtmişse onu kullan, yoksa otomatik karar ver
+    # OCR kullanımı kontrolü
     if use_ocr is True:
+        print("📸 [AŞAMA 0.1] OCR kullanımı: Aktif (kullanıcı tarafından belirlendi)")
         # OCR kullanılacaksa önce kontrol et
         if not processor._check_ocr_available():
             raise HTTPException(
@@ -3277,83 +3290,67 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
         # use_ocr=True ise sadece total_pages için minimal analiz yap (metin kontrolü yapma)
         pdf_structure = processor.analyze_pdf_structure(pdf_path, skip_text_analysis=True)
         total_pages = pdf_structure['total_pages']
-        print(f"📸 OCR kullanımı kullanıcı tarafından belirlendi: Tüm {total_pages} sayfa OCR ile işlenecek")
-    elif use_ocr is False:
+        print(f"   📄 Toplam sayfa: {total_pages}")
+        print(f"   📸 Tüm {total_pages} sayfa OCR ile işlenecek")
+    else:
+        print("📄 [AŞAMA 0.1] OCR kullanımı: Pasif (normal metin çıkarma)")
         # OCR kullanılmayacak, normal analiz yap
         pdf_structure = processor.analyze_pdf_structure(pdf_path)
         total_pages = pdf_structure['total_pages']
-        print(f"📄 OCR kullanımı kullanıcı tarafından devre dışı bırakıldı: Normal metin çıkarma kullanılacak")
-    else:
-        # use_ocr is None: Otomatik karar - Eski algoritma
-        # Önce PDF yapısını analiz et
-    pdf_structure = processor.analyze_pdf_structure(pdf_path)
-    total_pages = pdf_structure['total_pages']
+        print(f"   📄 Toplam sayfa: {total_pages}")
     
-    # Resim formatı kontrolü: Eğer PDF resim formatındaysa direkt OCR ile başla
-    text_coverage = pdf_structure.get('text_coverage', 0.0)
-    has_text = pdf_structure.get('has_text', False)
-    needs_ocr = pdf_structure.get('needs_ocr', False)
+    print("=" * 80)
+    print("🔍 [AŞAMA 0.2] PDF BÖLÜMLEME (DeepSeek API ile)")
+    print("=" * 80)
     
-    # Ortalama sayfa başına metin miktarını kontrol et (sadece başlıklar mı yoksa gerçek içerik mi?)
-    avg_text_per_page = 0
-    if total_pages > 0:
-        # Hızlı kontrol: İlk 3 sayfadan ortalama metin miktarını hesapla
-        import pdfplumber
-        from io import BytesIO
-        with open(pdf_path, 'rb') as f:
-            pdf_bytes = f.read()
-        pdf_file_obj = BytesIO(pdf_bytes)
-        with pdfplumber.open(pdf_file_obj) as pdf:
-            quick_check_pages = min(3, total_pages)
-            quick_total_text = 0
-            for page_num in range(quick_check_pages):
-                try:
-                    page = pdf.pages[page_num]
-                    page_text = page.extract_text()
-                    if page_text:
-                        quick_total_text += len(page_text.strip())
-                except Exception:
-                    pass
-            avg_text_per_page = quick_total_text / quick_check_pages if quick_check_pages > 0 else 0
+    # Her zaman DeepSeek API ile bölümleme yap
+    analyzer = DeepSeekAnalyzer(api_key)
+    print("✅ [AŞAMA 0.2] DeepSeek Analyzer oluşturuldu")
     
-    # Resim formatı: Metin yoksa veya çok az metin varsa (%30'dan az) veya OCR gerekliyse
-    # %30 eşiği: Metin kapsamı düşükse kalite zayıf olabilir, OCR daha iyi sonuç verebilir
-    # Ayrıca, eğer metin varsa ama çok azsa (sadece başlıklar), OCR gerekli
-    is_image_pdf = not has_text or text_coverage < 0.3 or needs_ocr or (has_text and avg_text_per_page < 300)
-    
-    use_ocr = is_image_pdf  # Resim formatındaysa OCR kullan
-    
-    if is_image_pdf:
-        print(f"📸 PDF resim formatında tespit edildi (kapsam: %{text_coverage*100:.1f}, ortalama: {avg_text_per_page:.0f} karakter/sayfa). OCR ile tüm {total_pages} sayfa işlenecek (sınırlama olmadan)...")
-    
-    use_ai = bool(api_key)
-    if use_ai:
-        analyzer = DeepSeekAnalyzer(api_key)
-        try:
-            # OCR modunda da intelligent sections kullanabiliriz (use_ocr parametresi ile)
-            sections = processor.create_intelligent_sections(pdf_path, total_pages, analyzer, use_ocr=use_ocr)
-        except Exception:
-            sections = processor.create_optimal_sections(pdf_path, total_pages, 3, 10)
-    else:
-        sections = processor.create_optimal_sections(pdf_path, total_pages, 3, 10)
+    try:
+        print("   🔄 Intelligent sections oluşturuluyor...")
+        sections = processor.create_intelligent_sections(pdf_path, total_pages, analyzer, use_ocr=use_ocr)
+        print(f"✅ [AŞAMA 0.2] {len(sections)} bölüm oluşturuldu (DeepSeek API ile)")
+    except Exception as e:
+        print(f"❌ [AŞAMA 0.2] Intelligent sections hatası: {str(e)}")
+        import traceback
+        print(f"   📋 Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"DeepSeek API ile bölümleme başarısız: {str(e)}"
+        )
 
+    print("=" * 80)
+    print("🔍 [AŞAMA 0.3] METADATA ÜRETİMİ (DeepSeek API ile)")
+    print("=" * 80)
+    
     metadata_list: List[Dict[str, Any]] = []
-    if use_ai:
-        analyzer = DeepSeekAnalyzer(api_key)
-    else:
-        analyzer = None  # type: ignore
     
     if use_ocr:
-        print(f"📸 OCR modu aktif: Tüm {total_pages} sayfa OCR ile işlenecek (sınırlama olmadan)")
+        print(f"📸 OCR modu aktif: Tüm sayfalar OCR ile işlenecek")
     
     for i, section in enumerate(sections):
+        print(f"   📎 [{i+1}/{len(sections)}] Bölüm metadata üretiliyor...")
+        print(f"      📄 Sayfa aralığı: {section['start_page']}-{section['end_page']}")
+        
         section_text = processor.extract_text_from_pages(pdf_path, section['start_page'], section['end_page'], use_ocr=use_ocr)
-        if use_ai and section_text.strip():
-            analysis = analyzer.analyze_section_content(section_text)  # type: ignore
-            title = analysis.get('title', f'Bölüm {i + 1}')
-            description = analysis.get('description', 'Bu bölüm için açıklama oluşturulamadı.')
-            keywords = analysis.get('keywords', f'bölüm {i + 1}')
+        
+        if section_text.strip():
+            print(f"      📝 Metin çıkarıldı: {len(section_text)} karakter")
+            print(f"      🤖 DeepSeek API ile analiz yapılıyor...")
+            try:
+                analysis = analyzer.analyze_section_content(section_text)
+                title = analysis.get('title', f'Bölüm {i + 1}')
+                description = analysis.get('description', 'Bu bölüm için açıklama oluşturulamadı.')
+                keywords = analysis.get('keywords', f'bölüm {i + 1}')
+                print(f"      ✅ Metadata üretildi: {title}")
+            except Exception as e:
+                print(f"      ⚠️ DeepSeek API analiz hatası: {str(e)}")
+                title = f"Bölüm {i + 1}"
+                description = "Bu bölüm için otomatik açıklama oluşturulamadı."
+                keywords = f"bölüm {i + 1}"
         else:
+            print(f"      ⚠️ Bölümde metin bulunamadı")
             title = f"Bölüm {i + 1}"
             description = "Bu bölüm için otomatik açıklama oluşturulamadı."
             keywords = f"bölüm {i + 1}"
@@ -3367,6 +3364,10 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
             "description": description,
             "keywords": keywords
         })
+        print(f"      ✅ Bölüm {i+1} tamamlandı")
+
+    print(f"✅ [AŞAMA 0.3] {len(metadata_list)} bölüm için metadata üretildi")
+    print("=" * 80)
 
     return {"sections": sections, "metadata_list": metadata_list, "total_pages": total_pages}
 
@@ -3404,10 +3405,10 @@ def _split_pdfs(pdf_path: str, sections: List[Dict[str, int]], metadata_list: Li
             
             out_path = Path(output_dir) / output_filename
             try:
-            with open(out_path, 'wb') as f:
-                writer.write(f)
-                file_size = out_path.stat().st_size
-                print(f"      💾 Dosya kaydedildi: {file_size:,} bytes")
+                with open(out_path, 'wb') as f:
+                    writer.write(f)
+                    file_size = out_path.stat().st_size
+                    print(f"      💾 Dosya kaydedildi: {file_size:,} bytes")
             except Exception as e:
                 print(f"      ❌ Dosya kaydetme hatası: {str(e)}")
                 raise
@@ -3416,10 +3417,10 @@ def _split_pdfs(pdf_path: str, sections: List[Dict[str, int]], metadata_list: Li
     json_path = Path(output_dir) / "pdf_sections_metadata.json"
     print(f"   📋 Metadata JSON dosyası kaydediliyor: {json_path}")
     try:
-    with open(json_path, 'w', encoding='utf-8') as jf:
-        json.dump({"pdf_sections": metadata_list}, jf, ensure_ascii=False, indent=2)
-        json_size = json_path.stat().st_size
-        print(f"   ✅ Metadata JSON kaydedildi: {json_size:,} bytes")
+        with open(json_path, 'w', encoding='utf-8') as jf:
+            json.dump({"pdf_sections": metadata_list}, jf, ensure_ascii=False, indent=2)
+            json_size = json_path.stat().st_size
+            print(f"   ✅ Metadata JSON kaydedildi: {json_size:,} bytes")
     except Exception as e:
         print(f"   ⚠️ Metadata JSON kaydetme hatası: {str(e)}")
     
@@ -3658,17 +3659,14 @@ async def process_item(req: ProcessRequest):
         
         pdf_base_name = "document"
         # Kullanıcının OCR tercihini al (tüm modlar için geçerli: m, p, t)
-        use_ocr = req.use_ocr if hasattr(req, 'use_ocr') else None
-        if use_ocr is not None:
-            print(f"   📸 OCR kullanımı: {'Aktif (tüm sayfalar OCR ile işlenecek)' if use_ocr else 'Pasif (normal metin çıkarma)'}")
-        else:
-            print(f"   🔄 OCR kullanımı: Otomatik karar")
+        use_ocr = req.use_ocr if hasattr(req, 'use_ocr') else False
+        print(f"   📸 OCR kullanımı: {'Aktif (tüm sayfalar OCR ile işlenecek)' if use_ocr else 'Pasif (normal metin çıkarma)'}")
         
         print(f"   🔄 Analiz başlatılıyor...")
         try:
             analysis_result = _analyze_and_prepare_headless(pdf_path, pdf_base_name, api_key, use_ocr=use_ocr)
-        sections = analysis_result['sections']
-        metadata_list = analysis_result['metadata_list']
+            sections = analysis_result['sections']
+            metadata_list = analysis_result['metadata_list']
             total_pages = analysis_result.get('total_pages', 0)
             
             print(f"✅ [AŞAMA 0] PDF analiz başarılı")
@@ -3697,7 +3695,7 @@ async def process_item(req: ProcessRequest):
             print(f"   📊 Bölüm sayısı: {len(sections)}")
             print(f"   📋 Metadata sayısı: {len(metadata_list)}")
             try:
-            output_dir = _split_pdfs(pdf_path, sections, metadata_list)
+                output_dir = _split_pdfs(pdf_path, sections, metadata_list)
                 print(f"✅ [AŞAMA 1] PDF bölümleme başarılı")
                 print(f"   📂 Output dizini: {output_dir}")
                 
@@ -3733,7 +3731,7 @@ async def process_item(req: ProcessRequest):
             
             # Login kontrolü
             print("🔐 [AŞAMA 2.2] MevzuatGPT'ye login yapılıyor...")
-                token = _login_with_config(cfg)
+            token = _login_with_config(cfg)
             if not token:
                 print("❌ [AŞAMA 2.2] Login başarısız!")
                 raise HTTPException(status_code=500, detail="MevzuatGPT login başarısız")
@@ -3746,9 +3744,9 @@ async def process_item(req: ProcessRequest):
                 print("❌ [AŞAMA 2.3] Output dizini bulunamadı!")
                 raise HTTPException(status_code=500, detail="Output dizini bulunamadı")
             
-                    upload_resp = _upload_bulk(cfg, token, output_dir, category, institution, document_name, metadata_list)
+            upload_resp = _upload_bulk(cfg, token, output_dir, category, institution, document_name, metadata_list)
             
-                    if upload_resp:
+            if upload_resp:
                 # Response kontrolü
                 if "error" in upload_resp:
                     print(f"❌ [AŞAMA 2.3] Upload hatası: {upload_resp.get('error')}")
@@ -3757,7 +3755,7 @@ async def process_item(req: ProcessRequest):
                     print(f"❌ [AŞAMA 2.3] Upload başarısız: HTTP {upload_resp.get('status_code')}")
                     print(f"   📝 Response: {upload_resp.get('text', '')[:500]}")
                     raise HTTPException(status_code=500, detail=f"Upload başarısız: HTTP {upload_resp.get('status_code')}")
-                    else:
+                else:
                     print(f"✅ [AŞAMA 2.3] Upload başarılı!")
                     print(f"   📦 Response keys: {list(upload_resp.keys()) if isinstance(upload_resp, dict) else 'N/A'}")
                     if isinstance(upload_resp, dict):
