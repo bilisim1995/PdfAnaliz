@@ -2953,6 +2953,7 @@ def _check_document_name_exists(belge_adi: str, mode: str) -> Tuple[bool, Option
         # MevzuatGPT (Supabase/API) kontrolü - 'm' ve 't' modları için
         if mode in ["m", "t"]:
             print("\n   📡 [1/2] MevzuatGPT (Supabase) kontrolü yapılıyor...")
+            print(f"   🌐 Endpoint: /api/admin/documents")
             try:
                 cfg = _load_config()
                 if cfg:
@@ -2960,15 +2961,33 @@ def _check_document_name_exists(belge_adi: str, mode: str) -> Tuple[bool, Option
                     if token:
                         api_base_url = cfg.get("api_base_url")
                         uploaded_docs = get_uploaded_documents(api_base_url, token, use_streamlit=False)
+                        print(f"   📊 API'den {len(uploaded_docs)} belge çekildi")
+                        
+                        # Debug: İlk belgenin yapısını göster
+                        if uploaded_docs and len(uploaded_docs) > 0:
+                            first_doc_keys = list(uploaded_docs[0].keys())
+                            print(f"   🔍 İlk belgenin alanları: {first_doc_keys}")
+                            # İlk belgenin tüm değerlerini göster (debug için)
+                            sample_doc = uploaded_docs[0]
+                            print(f"   📋 Örnek belge (ilk 500 karakter): {json.dumps(sample_doc, ensure_ascii=False, indent=2)[:500]}")
                         
                         for doc in uploaded_docs:
-                            doc_belge_adi = doc.get("belge_adi", "")
-                            if doc_belge_adi:
-                                doc_normalized = normalize_for_exact_match(doc_belge_adi)
-                                if belge_normalized == doc_normalized:
-                                    error_msg = f"Bu belge adı ('{belge_adi}') MevzuatGPT'de zaten mevcut. Lütfen farklı bir ad kullanın."
-                                    print(f"   ❌ MevzuatGPT'de bulundu: {doc_belge_adi}")
-                                    return True, error_msg
+                            # Birden fazla alan kontrol et (API'den dönen belgelerde farklı alan isimleri olabilir)
+                            doc_titles = [
+                                doc.get("belge_adi", ""),
+                                doc.get("document_name", ""),
+                                doc.get("title", ""),
+                                doc.get("filename", ""),
+                                doc.get("name", "")
+                            ]
+                            
+                            for doc_title in doc_titles:
+                                if doc_title:
+                                    doc_normalized = normalize_for_exact_match(doc_title)
+                                    if belge_normalized == doc_normalized:
+                                        error_msg = f"Bu belge adı ('{belge_adi}') MevzuatGPT'de zaten mevcut. Lütfen farklı bir ad kullanın."
+                                        print(f"   ❌ MevzuatGPT'de bulundu: '{doc_title}' (alan: {[k for k, v in doc.items() if v == doc_title][0] if doc_title in doc.values() else 'bilinmiyor'})")
+                                        return True, error_msg
                         
                         print(f"   ✅ MevzuatGPT'de bulunamadı ({len(uploaded_docs)} belge kontrol edildi)")
                     else:
@@ -2977,6 +2996,8 @@ def _check_document_name_exists(belge_adi: str, mode: str) -> Tuple[bool, Option
                     print("   ⚠️ Config bulunamadı, MevzuatGPT kontrolü atlandı")
             except Exception as e:
                 print(f"   ⚠️ MevzuatGPT kontrolü sırasında hata: {str(e)}")
+                import traceback
+                print(f"   📋 Traceback: {traceback.format_exc()}")
                 # Hata olsa bile devam et, sadece uyarı ver
         
         # Portal (MongoDB) kontrolü - 'p' ve 't' modları için
