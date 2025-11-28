@@ -3775,29 +3775,25 @@ async def process_item(req: ProcessRequest):
         print(f"📄 Belge Adı: {document_name}")
         print(f"📂 Kategori: {category}")
 
+        # Belge adı kontrolü (PDF indirmeden önce)
+        print("=" * 80)
+        print("🔍 BELGE ADI KONTROLÜ (PDF indirmeden önce)")
+        print("=" * 80)
+        exists, error_msg = _check_document_name_exists(document_name, mode)
+        if exists:
+            print(f"❌ Belge adı kontrolü başarısız: {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg or "Bu belge adı zaten mevcut.")
+        print("✅ Belge adı kontrolü başarılı - PDF indirme işlemine geçiliyor")
+
         # PDF'i indir
+        print("=" * 80)
+        print("📥 PDF İNDİRME")
+        print("=" * 80)
         print("📥 PDF indiriliyor...")
         pdf_path = await download_pdf_from_url(pdf_url)
         if not validate_pdf_file(pdf_path):
             raise HTTPException(status_code=500, detail="İndirilen dosya geçerli bir PDF değil.")
         print("✅ PDF indirme başarılı")
-
-        # Belge adı kontrolü (DeepSeek işlemlerinden önce)
-        print("=" * 80)
-        print("🔍 BELGE ADI KONTROLÜ (DeepSeek işlemlerinden önce)")
-        print("=" * 80)
-        exists, error_msg = _check_document_name_exists(document_name, mode)
-        if exists:
-            print(f"❌ Belge adı kontrolü başarısız: {error_msg}")
-            # PDF dosyasını temizle
-            try:
-                if pdf_path and os.path.exists(pdf_path):
-                    os.remove(pdf_path)
-                    print(f"   🧹 İndirilen PDF dosyası temizlendi: {pdf_path}")
-            except Exception as e:
-                print(f"   ⚠️ PDF temizleme hatası: {str(e)}")
-            raise HTTPException(status_code=400, detail=error_msg or "Bu belge adı zaten mevcut.")
-        print("✅ Belge adı kontrolü başarılı - İşleme devam ediliyor")
 
         # Analiz ve metadata (tüm modlar için: MevzuatGPT, Portal ve Tamamı)
         print("=" * 80)
