@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTa
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 import uvicorn
 from scrapers.kaysis_scraper import (
     scrape_kaysis_mevzuat,
@@ -2926,6 +2926,101 @@ def _get_mongodb_client() -> Optional[MongoClient]:
         return None
 
 
+def _check_document_name_exists(belge_adi: str, mode: str) -> Tuple[bool, Optional[str]]:
+    """
+    Belge adının hem Supabase (MevzuatGPT API) hem de MongoDB (Portal) üzerinde 
+    daha önce yüklenip yüklenmediğini kontrol eder.
+    
+    Args:
+        belge_adi: Kontrol edilecek belge adı
+        mode: İşlem modu ('m': MevzuatGPT, 'p': Portal, 't': Tamamı)
+    
+    Returns:
+        (exists, error_message) tuple:
+        - exists: True ise belge zaten mevcut
+        - error_message: Hata mesajı (varsa)
+    """
+    try:
+        print("=" * 80)
+        print("🔍 BELGE ADI KONTROLÜ")
+        print("=" * 80)
+        print(f"   📄 Kontrol edilen belge adı: {belge_adi}")
+        print(f"   🔧 İşlem modu: {mode.upper()}")
+        
+        belge_normalized = normalize_for_exact_match(belge_adi)
+        print(f"   🔤 Normalize edilmiş ad: {belge_normalized}")
+        
+        # MevzuatGPT (Supabase/API) kontrolü - 'm' ve 't' modları için
+        if mode in ["m", "t"]:
+            print("\n   📡 [1/2] MevzuatGPT (Supabase) kontrolü yapılıyor...")
+            try:
+                cfg = _load_config()
+                if cfg:
+                    token = _login_with_config(cfg)
+                    if token:
+                        api_base_url = cfg.get("api_base_url")
+                        uploaded_docs = get_uploaded_documents(api_base_url, token, use_streamlit=False)
+                        
+                        for doc in uploaded_docs:
+                            doc_belge_adi = doc.get("belge_adi", "")
+                            if doc_belge_adi:
+                                doc_normalized = normalize_for_exact_match(doc_belge_adi)
+                                if belge_normalized == doc_normalized:
+                                    error_msg = f"Bu belge adı ('{belge_adi}') MevzuatGPT'de zaten mevcut. Lütfen farklı bir ad kullanın."
+                                    print(f"   ❌ MevzuatGPT'de bulundu: {doc_belge_adi}")
+                                    return True, error_msg
+                        
+                        print(f"   ✅ MevzuatGPT'de bulunamadı ({len(uploaded_docs)} belge kontrol edildi)")
+                    else:
+                        print("   ⚠️ MevzuatGPT login başarısız, kontrol atlandı")
+                else:
+                    print("   ⚠️ Config bulunamadı, MevzuatGPT kontrolü atlandı")
+            except Exception as e:
+                print(f"   ⚠️ MevzuatGPT kontrolü sırasında hata: {str(e)}")
+                # Hata olsa bile devam et, sadece uyarı ver
+        
+        # Portal (MongoDB) kontrolü - 'p' ve 't' modları için
+        if mode in ["p", "t"]:
+            print("\n   🗄️ [2/2] Portal (MongoDB) kontrolü yapılıyor...")
+            try:
+                client = _get_mongodb_client()
+                if client:
+                    database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+                    metadata_collection_name = os.getenv("MONGODB_METADATA_COLLECTION", "metadata")
+                    db = client[database_name]
+                    metadata_collection = db[metadata_collection_name]
+                    
+                    # MongoDB'den tüm pdf_adi'leri çek ve kontrol et
+                    cursor = metadata_collection.find({}, {"pdf_adi": 1})
+                    count = 0
+                    for doc in cursor:
+                        pdf_adi = doc.get("pdf_adi", "")
+                        if pdf_adi:
+                            pdf_normalized = normalize_for_exact_match(pdf_adi)
+                            if belge_normalized == pdf_normalized:
+                                error_msg = f"Bu belge adı ('{belge_adi}') Portal'da zaten mevcut. Lütfen farklı bir ad kullanın."
+                                print(f"   ❌ Portal'da bulundu: {pdf_adi}")
+                                client.close()
+                                return True, error_msg
+                        count += 1
+                    
+                    client.close()
+                    print(f"   ✅ Portal'da bulunamadı ({count} belge kontrol edildi)")
+                else:
+                    print("   ⚠️ MongoDB bağlantısı kurulamadı, Portal kontrolü atlandı")
+            except Exception as e:
+                print(f"   ⚠️ Portal kontrolü sırasında hata: {str(e)}")
+                # Hata olsa bile devam et, sadece uyarı ver
+        
+        print("\n   ✅ Belge adı kontrolü tamamlandı - Belge yüklenebilir")
+        return False, None
+        
+    except Exception as e:
+        print(f"   ❌ Belge adı kontrolü sırasında beklenmeyen hata: {str(e)}")
+        # Hata durumunda güvenli tarafta kal, kontrolü geç
+        return False, None
+
+
 def _save_to_mongodb(metadata: Dict[str, Any], content: str) -> Optional[str]:
     """Metadata ve content'i MongoDB'ye kaydeder, metadata_id döner"""
     try:
@@ -3665,6 +3760,23 @@ async def process_item(req: ProcessRequest):
         if not validate_pdf_file(pdf_path):
             raise HTTPException(status_code=500, detail="İndirilen dosya geçerli bir PDF değil.")
         print("✅ PDF indirme başarılı")
+
+        # Belge adı kontrolü (DeepSeek işlemlerinden önce)
+        print("=" * 80)
+        print("🔍 BELGE ADI KONTROLÜ (DeepSeek işlemlerinden önce)")
+        print("=" * 80)
+        exists, error_msg = _check_document_name_exists(document_name, mode)
+        if exists:
+            print(f"❌ Belge adı kontrolü başarısız: {error_msg}")
+            # PDF dosyasını temizle
+            try:
+                if pdf_path and os.path.exists(pdf_path):
+                    os.remove(pdf_path)
+                    print(f"   🧹 İndirilen PDF dosyası temizlendi: {pdf_path}")
+            except Exception as e:
+                print(f"   ⚠️ PDF temizleme hatası: {str(e)}")
+            raise HTTPException(status_code=400, detail=error_msg or "Bu belge adı zaten mevcut.")
+        print("✅ Belge adı kontrolü başarılı - İşleme devam ediliyor")
 
         # Analiz ve metadata (tüm modlar için: MevzuatGPT, Portal ve Tamamı)
         print("=" * 80)
