@@ -2926,7 +2926,7 @@ def _get_mongodb_client() -> Optional[MongoClient]:
         return None
 
 
-def _check_document_name_exists(belge_adi: str, mode: str) -> Tuple[bool, Optional[str]]:
+def _check_document_name_exists(belge_adi: str, mode: str) -> Tuple[bool, bool, Optional[str]]:
     """
     Belge adının hem Supabase (MevzuatGPT API) hem de MongoDB (Portal) üzerinde 
     daha önce yüklenip yüklenmediğini kontrol eder.
@@ -2936,10 +2936,14 @@ def _check_document_name_exists(belge_adi: str, mode: str) -> Tuple[bool, Option
         mode: İşlem modu ('m': MevzuatGPT, 'p': Portal, 't': Tamamı)
     
     Returns:
-        (exists, error_message) tuple:
-        - exists: True ise belge zaten mevcut
+        (exists_in_mevzuatgpt, exists_in_portal, error_message) tuple:
+        - exists_in_mevzuatgpt: True ise MevzuatGPT'de mevcut
+        - exists_in_portal: True ise Portal'da mevcut
         - error_message: Hata mesajı (varsa)
     """
+    exists_in_mevzuatgpt = False
+    exists_in_portal = False
+    
     try:
         print("=" * 80)
         print("🔍 BELGE ADI KONTROLÜ")
@@ -2963,14 +2967,6 @@ def _check_document_name_exists(belge_adi: str, mode: str) -> Tuple[bool, Option
                         uploaded_docs = get_uploaded_documents(api_base_url, token, use_streamlit=False)
                         print(f"   📊 API'den {len(uploaded_docs)} belge çekildi")
                         
-                        # Debug: İlk belgenin yapısını göster
-                        if uploaded_docs and len(uploaded_docs) > 0:
-                            first_doc_keys = list(uploaded_docs[0].keys())
-                            print(f"   🔍 İlk belgenin alanları: {first_doc_keys}")
-                            # İlk belgenin tüm değerlerini göster (debug için)
-                            sample_doc = uploaded_docs[0]
-                            print(f"   📋 Örnek belge (ilk 500 karakter): {json.dumps(sample_doc, ensure_ascii=False, indent=2)[:500]}")
-                        
                         for doc in uploaded_docs:
                             # Birden fazla alan kontrol et (API'den dönen belgelerde farklı alan isimleri olabilir)
                             doc_titles = [
@@ -2985,11 +2981,15 @@ def _check_document_name_exists(belge_adi: str, mode: str) -> Tuple[bool, Option
                                 if doc_title:
                                     doc_normalized = normalize_for_exact_match(doc_title)
                                     if belge_normalized == doc_normalized:
-                                        error_msg = f"Bu belge adı ('{belge_adi}') MevzuatGPT'de zaten mevcut. Lütfen farklı bir ad kullanın."
-                                        print(f"   ❌ MevzuatGPT'de bulundu: '{doc_title}' (alan: {[k for k, v in doc.items() if v == doc_title][0] if doc_title in doc.values() else 'bilinmiyor'})")
-                                        return True, error_msg
+                                        exists_in_mevzuatgpt = True
+                                        print(f"   ✅ MevzuatGPT'de bulundu: '{doc_title}'")
+                                        break
+                            
+                            if exists_in_mevzuatgpt:
+                                break
                         
-                        print(f"   ✅ MevzuatGPT'de bulunamadı ({len(uploaded_docs)} belge kontrol edildi)")
+                        if not exists_in_mevzuatgpt:
+                            print(f"   ❌ MevzuatGPT'de bulunamadı ({len(uploaded_docs)} belge kontrol edildi)")
                     else:
                         print("   ⚠️ MevzuatGPT login başarısız, kontrol atlandı")
                 else:
@@ -3019,27 +3019,38 @@ def _check_document_name_exists(belge_adi: str, mode: str) -> Tuple[bool, Option
                         if pdf_adi:
                             pdf_normalized = normalize_for_exact_match(pdf_adi)
                             if belge_normalized == pdf_normalized:
-                                error_msg = f"Bu belge adı ('{belge_adi}') Portal'da zaten mevcut. Lütfen farklı bir ad kullanın."
-                                print(f"   ❌ Portal'da bulundu: {pdf_adi}")
-                                client.close()
-                                return True, error_msg
+                                exists_in_portal = True
+                                print(f"   ✅ Portal'da bulundu: {pdf_adi}")
+                                break
                         count += 1
                     
                     client.close()
-                    print(f"   ✅ Portal'da bulunamadı ({count} belge kontrol edildi)")
+                    if not exists_in_portal:
+                        print(f"   ❌ Portal'da bulunamadı ({count} belge kontrol edildi)")
                 else:
                     print("   ⚠️ MongoDB bağlantısı kurulamadı, Portal kontrolü atlandı")
             except Exception as e:
                 print(f"   ⚠️ Portal kontrolü sırasında hata: {str(e)}")
                 # Hata olsa bile devam et, sadece uyarı ver
         
-        print("\n   ✅ Belge adı kontrolü tamamlandı - Belge yüklenebilir")
-        return False, None
+        # Sonuç özeti
+        print("\n   📊 Kontrol Sonuçları:")
+        print(f"      - MevzuatGPT: {'✅ Mevcut' if exists_in_mevzuatgpt else '❌ Yok'}")
+        print(f"      - Portal: {'✅ Mevcut' if exists_in_portal else '❌ Yok'}")
+        
+        # Her ikisinde de varsa hata mesajı oluştur
+        if exists_in_mevzuatgpt and exists_in_portal:
+            error_msg = f"Bu belge adı ('{belge_adi}') hem MevzuatGPT'de hem de Portal'da zaten mevcut. Yükleme yapılmayacak."
+            print(f"\n   ❌ {error_msg}")
+            return exists_in_mevzuatgpt, exists_in_portal, error_msg
+        
+        print("\n   ✅ Belge adı kontrolü tamamlandı")
+        return exists_in_mevzuatgpt, exists_in_portal, None
         
     except Exception as e:
         print(f"   ❌ Belge adı kontrolü sırasında beklenmeyen hata: {str(e)}")
         # Hata durumunda güvenli tarafta kal, kontrolü geç
-        return False, None
+        return False, False, None
 
 
 def _save_to_mongodb(metadata: Dict[str, Any], content: str) -> Optional[str]:
@@ -3779,11 +3790,36 @@ async def process_item(req: ProcessRequest):
         print("=" * 80)
         print("🔍 BELGE ADI KONTROLÜ (PDF indirmeden önce)")
         print("=" * 80)
-        exists, error_msg = _check_document_name_exists(document_name, mode)
-        if exists:
-            print(f"❌ Belge adı kontrolü başarısız: {error_msg}")
-            raise HTTPException(status_code=400, detail=error_msg or "Bu belge adı zaten mevcut.")
-        print("✅ Belge adı kontrolü başarılı - PDF indirme işlemine geçiliyor")
+        exists_in_mevzuatgpt, exists_in_portal, error_msg = _check_document_name_exists(document_name, mode)
+        
+        # Mode'a göre kontrol ve dinamik mode ayarlama
+        if mode == "t":  # "Hepsini yükle" modu
+            if exists_in_mevzuatgpt and exists_in_portal:
+                # Her ikisinde de varsa -> Hata ver
+                print(f"❌ Belge adı kontrolü başarısız: {error_msg}")
+                raise HTTPException(status_code=400, detail=error_msg or "Bu belge adı her iki yerde de zaten mevcut.")
+            elif exists_in_mevzuatgpt and not exists_in_portal:
+                # Sadece MevzuatGPT'de varsa -> Sadece Portal'a yükle
+                print(f"ℹ️ Belge MevzuatGPT'de zaten yüklü, sadece Portal'a yüklenecek.")
+                mode = "p"
+            elif exists_in_portal and not exists_in_mevzuatgpt:
+                # Sadece Portal'da varsa -> Sadece MevzuatGPT'ye yükle
+                print(f"ℹ️ Belge Portal'da zaten yüklü, sadece MevzuatGPT'ye yüklenecek.")
+                mode = "m"
+            else:
+                # Hiçbirinde yoksa -> Her ikisine de yükle (mode 't' kalır)
+                print(f"✅ Belge her iki yerde de yok, her ikisine de yüklenecek.")
+        else:
+            # 'm' veya 'p' modu için sadece ilgili kontrolü yap
+            if mode == "m" and exists_in_mevzuatgpt:
+                print(f"❌ Belge adı kontrolü başarısız: Bu belge adı MevzuatGPT'de zaten mevcut.")
+                raise HTTPException(status_code=400, detail="Bu belge adı MevzuatGPT'de zaten mevcut.")
+            elif mode == "p" and exists_in_portal:
+                print(f"❌ Belge adı kontrolü başarısız: Bu belge adı Portal'da zaten mevcut.")
+                raise HTTPException(status_code=400, detail="Bu belge adı Portal'da zaten mevcut.")
+        
+        print(f"✅ Belge adı kontrolü tamamlandı - İşlem modu: {mode.upper()}")
+        print("📥 PDF indirme işlemine geçiliyor...")
 
         # PDF'i indir
         print("=" * 80)
