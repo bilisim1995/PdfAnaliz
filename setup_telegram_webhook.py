@@ -25,12 +25,12 @@ def set_webhook():
     print("Telegram Bot Webhook Kurulumu")
     print("=" * 60)
     print("\nAPI sunucunuzun public URL'ini girin.")
-    print("Örnek: https://api.senin-domainin.com veya https://123.45.67.89:8000")
+    print("Örnek: https://scrapers.mevzuatgpt.org")
     print("\nNot: Eğer HTTPS yoksa, Telegram webhook kabul etmez.")
     print("     Nginx reverse proxy veya Let's Encrypt kullanmanız gerekir.")
     print()
     
-    webhook_url = input("Webhook URL (örn: https://api.senin-domainin.com/api/telegram/webhook): ").strip()
+    webhook_url = input("Webhook URL (örn: https://scrapers.mevzuatgpt.org): ").strip()
     
     if not webhook_url:
         print("❌ Webhook URL boş olamaz!")
