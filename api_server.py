@@ -4347,6 +4347,8 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
         # Yüklü olmayan mevzuatları tespit et
         not_uploaded_to_mevzuatgpt = []
         not_uploaded_to_portal = []
+        # Otomatik yükleme listesi: sadece biri yüklü olanlar (senkronizasyon için)
+        sync_items = []
         total_items = 0
         
         for section in all_sections:
@@ -4376,7 +4378,7 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
                             is_in_portal = True
                             break
                 
-                # Yüklü olmayanları listeye ekle
+                # Yüklü olmayanları listeye ekle (istatistik için)
                 if not is_in_mevzuatgpt:
                     not_uploaded_to_mevzuatgpt.append({
                         "baslik": item_baslik,
@@ -4390,6 +4392,19 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
                         "link": item.get('link', ''),
                         "section_title": section.get('section_title', '')
                     })
+
+                # Otomatik yükleme listesi:
+                # - Eğer hem MevzuatGPT'de hem Portal'da yoksa → listeye ALMA
+                # - Eğer her ikisinde de varsa → listeye ALMA
+                # - Sadece birinde varsa → listeye AL (tümünü yükle modu eksik tarafı tamamlayacak)
+                if (is_in_mevzuatgpt and is_in_portal) or (not is_in_mevzuatgpt and not is_in_portal):
+                    continue
+
+                sync_items.append({
+                    "baslik": item_baslik,
+                    "link": item.get('link', ''),
+                    "section_title": section.get('section_title', '')
+                })
         
         # Sayıları hesapla
         mevzuatgpt_missing = len(not_uploaded_to_mevzuatgpt)
@@ -4404,7 +4419,7 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
         
         # Global state'e kaydet
         auto_scraper_jobs[req.kurum_id] = {
-            "pending_items": not_uploaded_to_mevzuatgpt,  # MevzuatGPT'de olmayanlar (tümünü yükle modu kullanılacak)
+            "pending_items": sync_items,  # Sadece biri yüklü olanlar (senkronizasyon için)
             "is_running": False,
             "stop_requested": False,
             "kurum_adi": kurum_adi
@@ -4449,7 +4464,7 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
                 "total_items": total_items,
                 "not_uploaded_mevzuatgpt": mevzuatgpt_missing,
                 "not_uploaded_portal": portal_missing,
-                "pending_count": mevzuatgpt_missing
+                "pending_count": len(sync_items)
             }
         )
         
@@ -4534,6 +4549,15 @@ async def auto_scraper_start(req: AutoScraperStartRequest):
                 data={"is_running": True}
             )
         
+        # Eğer stop isteği önceden verilmişse yeni işlem başlatma
+        if job.get("stop_requested", False):
+            print("⏹️ Bu kurum için stop isteği mevcut, yeni yükleme başlatılmayacak.")
+            return ScrapeResponse(
+                success=False,
+                message="Bu kurum için stop isteği var. Yeni yükleme başlatılmadı.",
+                data={"is_running": False, "stop_requested": True}
+            )
+        
         # Job'u başlat
         job["is_running"] = True
         job["stop_requested"] = False
@@ -4580,6 +4604,16 @@ async def auto_scraper_start(req: AutoScraperStartRequest):
                         processed_count += 1
                         print(f"✅ [{i}/{len(pending_items)}] Başarıyla yüklendi")
                         
+                        # Stop isteği geldiyse bu noktadan sonra hiçbir ek işlem yapma
+                        if job.get("stop_requested", False):
+                            print("⏹️ Stop komutu alındı, analiz ve ek işlemler yapılmadan döngüden çıkılıyor...")
+                            break
+                        
+                        # Stop kontrolü (bekleme öncesi)
+                        if job.get("stop_requested", False):
+                            print("⏹️ Stop komutu alındı, bekleme ve ek işlemler atlanıyor...")
+                            break
+                        
                         # 5 saniye bekle
                         import asyncio
                         await asyncio.sleep(5)
@@ -4603,11 +4637,27 @@ async def auto_scraper_start(req: AutoScraperStartRequest):
                                     pdf_url = metadata_doc.get("pdf_url", "")
                                     belge_turu = metadata_doc.get("belge_turu", section_title)
                                     
+                                    # Stop isteği geldiyse Telegram ve diğer işlemleri atla
+                                    if job.get("stop_requested", False):
+                                        print("⏹️ Stop komutu alındı, Telegram bildirimi atlanıyor...")
+                                        break
+                                    
+                                    # Nereye yüklendi bilgisini belirle
+                                    upload_target = "Bilinmiyor"
+                                    msg = (result.message or "").lower()
+                                    if "mevzuatgpt'ye yükleme tamamlandı" in msg:
+                                        upload_target = "Sadece MevzuatGPT"
+                                    elif "portal'a yükleme tamamlandı" in msg:
+                                        upload_target = "Sadece Portal"
+                                    elif "tüm işlemler tamamlandı" in msg or "mevzuatgpt + portal" in msg:
+                                        upload_target = "MevzuatGPT + Portal"
+                                    
                                     # Telegram'a bilgi gönder
                                     telegram_message = f"✅ <b>Yeni Mevzuat Yüklendi</b>\n\n"
                                     telegram_message += f"<b>Kurum:</b> {kurum_adi}\n"
                                     telegram_message += f"<b>Belge Adı:</b> {baslik}\n"
                                     telegram_message += f"<b>Kategori:</b> {belge_turu}\n"
+                                    telegram_message += f"<b>Nereye Yüklendi:</b> {upload_target}\n"
                                     if pdf_url:
                                         telegram_message += f"<b>Public URL:</b> <a href=\"{pdf_url}\">{pdf_url}</a>"
                                     else:
@@ -4716,7 +4766,7 @@ async def auto_scraper_stop(req: AutoScraperStopRequest):
         
         return ScrapeResponse(
             success=True,
-            message="Yükleme işlemi durduruldu. Mevcut mevzuat yüklendikten sonra işlem sonlanacak.",
+            message="Yükleme işlemi durduruldu. Yeni mevzuatlar başlatılmayacak.",
             data={"stop_requested": True}
         )
         
