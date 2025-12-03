@@ -4474,22 +4474,58 @@ async def auto_scraper_start(req: AutoScraperStartRequest):
         print(f"🚀 Auto Scraper Start İsteği Alındı (Kurum ID: {req.kurum_id})")
         print("="*80)
         
-        # Job kontrolü
+        # Job kontrolü - analiz yoksa otomatik analiz yap
+        if req.kurum_id not in auto_scraper_jobs:
+            print("ℹ️ Bu kurum için daha önce analiz yapılmamış. Otomatik analiz başlatılıyor...")
+            try:
+                analyze_req = AutoScraperAnalyzeRequest(
+                    kurum_id=req.kurum_id,
+                    detsis=None,
+                    type="kaysis"
+                )
+                await auto_scraper_analyze(analyze_req)
+            except HTTPException as e:
+                # Telegram'a hata mesajı gönder
+                _send_telegram_message(f"❌ Otomatik analiz hatası: {e.detail}")
+                raise
+            except Exception as e:
+                print(f"❌ Otomatik analiz sırasında hata: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Otomatik analiz sırasında hata oluştu: {str(e)}"
+                )
+        
+        # Analiz sonrası job tekrar kontrol et
         if req.kurum_id not in auto_scraper_jobs:
             raise HTTPException(
-                status_code=404,
-                detail="Bu kurum için analiz yapılmamış. Önce /api/auto-scraper/analyze endpoint'ini çağırın."
+                status_code=500,
+                detail="Analiz sonrasında job oluşturulamadı."
             )
         
         job = auto_scraper_jobs[req.kurum_id]
         pending_items = job.get("pending_items", [])
         
+        # Eğer analiz yapılmış ama liste boşsa, tekrar analiz dene
         if not pending_items:
-            return ScrapeResponse(
-                success=True,
-                message="Yüklenecek mevzuat bulunamadı.",
-                data={"processed_count": 0, "total_count": 0}
-            )
+            print("ℹ️ Pending liste boş, analiz tekrarlanıyor...")
+            try:
+                analyze_req = AutoScraperAnalyzeRequest(
+                    kurum_id=req.kurum_id,
+                    detsis=None,
+                    type="kaysis"
+                )
+                await auto_scraper_analyze(analyze_req)
+                job = auto_scraper_jobs.get(req.kurum_id, job)
+                pending_items = job.get("pending_items", [])
+            except Exception as e:
+                print(f"❌ Tekrar analiz sırasında hata: {str(e)}")
+            
+            if not pending_items:
+                return ScrapeResponse(
+                    success=True,
+                    message="Yüklenecek mevzuat bulunamadı.",
+                    data={"processed_count": 0, "total_count": 0}
+                )
         
         if job.get("is_running", False):
             return ScrapeResponse(
