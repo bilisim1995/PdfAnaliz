@@ -263,7 +263,7 @@ class ProcessResponse(BaseModel):
 
 class AutoScraperAnalyzeRequest(BaseModel):
     kurum_id: str = Field(..., description="Kurum MongoDB ObjectId")
-    detsis: str = Field(..., description="DETSIS numarası (KAYSİS kurum ID'si)")
+    detsis: Optional[str] = Field(default=None, description="DETSIS numarası (KAYSİS kurum ID'si, opsiyonel)")
     type: str = Field(default="kaysis", description="Scraper tipi (varsayılan: kaysis)")
 
     model_config = {
@@ -4249,7 +4249,7 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
     """
     try:
         print("\n" + "="*80)
-        print(f"🚀 Auto Scraper Analyze İsteği Alındı (Kurum ID: {req.kurum_id}, DETSIS: {req.detsis})")
+        print(f"🚀 Auto Scraper Analyze İsteği Alındı (Kurum ID: {req.kurum_id}, DETSIS: {req.detsis or 'N/A'})")
         print("="*80)
         
         # Type kontrolü
@@ -4260,8 +4260,9 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
                 data={"error": "UNSUPPORTED_TYPE", "type": req.type}
             )
         
-        # MongoDB'den kurum bilgisini çek
+        # MongoDB'den kurum bilgisini çek (kurum_adi ve detsis)
         kurum_adi = None
+        kurum_detsis: Optional[str] = None
         try:
             client = _get_mongodb_client()
             if client:
@@ -4272,13 +4273,27 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
                 kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.kurum_id)})
                 if kurum_doc:
                     kurum_adi = kurum_doc.get("kurum_adi", "Bilinmeyen Kurum")
+                    kurum_detsis_val = (kurum_doc.get("detsis") or "").strip()
+                    kurum_detsis = kurum_detsis_val or None
                 client.close()
         except Exception as e:
             print(f"⚠️ MongoDB'den kurum bilgisi alınamadı: {str(e)}")
             kurum_adi = "Bilinmeyen Kurum"
         
         print(f"📋 Kurum: {kurum_adi}")
-        print(f"🔢 DETSIS: {req.detsis}")
+        # DETSIS bilgisini belirle (öncelik request, yoksa kurum kaydı)
+        detsis = (req.detsis or "").strip() if req.detsis else None
+        if not detsis:
+            detsis = kurum_detsis
+        
+        if not detsis:
+            print("❌ DETSIS bilgisi bulunamadı. Kurum kaydında veya istekte DETSIS alanı yok.")
+            raise HTTPException(
+                status_code=400,
+                detail="DETSIS bilgisi bulunamadı. Lütfen kurum için detsis alanını doldurun veya istekte gönderin."
+            )
+        
+        print(f"🔢 DETSIS: {detsis}")
         
         # MevzuatGPT'de yüklü belgeleri çek
         uploaded_docs = []
@@ -4317,7 +4332,7 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
         
         # KAYSİS scraper'ı kullan
         if req.type.lower() == "kaysis":
-            all_sections, stats = scrape_kaysis_mevzuat(detsis=req.detsis)
+            all_sections, stats = scrape_kaysis_mevzuat(detsis=detsis)
             print_results_to_console(all_sections, stats)
         
         # Yüklü olmayan mevzuatları tespit et
@@ -4643,6 +4658,93 @@ async def auto_scraper_stop(req: AutoScraperStopRequest):
             status_code=500,
             detail=f"Stop işlemi sırasında hata oluştu: {str(e)}"
         )
+
+
+@app.post("/api/telegram/webhook", tags=["SGK Scraper"], summary="Telegram bot webhook")
+async def telegram_webhook(update: Dict[str, Any]):
+    """
+    Telegram bot webhook endpoint'i.
+    Desteklenen komutlar:
+      - /analyze <kurum_id>
+      - /start <kurum_id>
+      - /stop <kurum_id>
+    """
+    try:
+        # Telegram update içinden mesajı al
+        message = (
+            update.get("message")
+            or update.get("edited_message")
+            or update.get("channel_post")
+            or update.get("edited_channel_post")
+        )
+        if not message:
+            return {"ok": True}
+
+        text = (message.get("text") or "").strip()
+        if not text:
+            return {"ok": True}
+
+        # Komut ve argümanları ayıkla
+        parts = text.split()
+        if not parts:
+            return {"ok": True}
+
+        # /command@BotName formatını normalize et
+        cmd = parts[0].split("@")[0].lower()
+        args = parts[1:]
+
+        print(f"📩 Telegram komutu alındı: {cmd} args={args}")
+
+        if cmd == "/analyze":
+            if not args:
+                _send_telegram_message("⚠️ <b>Kullanım:</b> /analyze &lt;kurum_id&gt;")
+                return {"ok": True}
+
+            kurum_id = args[0]
+            try:
+                req = AutoScraperAnalyzeRequest(kurum_id=kurum_id, detsis=None, type="kaysis")
+                await auto_scraper_analyze(req)
+            except HTTPException as e:
+                _send_telegram_message(f"❌ Analiz hatası: {e.detail}")
+
+        elif cmd == "/start":
+            if not args:
+                _send_telegram_message("⚠️ <b>Kullanım:</b> /start &lt;kurum_id&gt;")
+                return {"ok": True}
+
+            kurum_id = args[0]
+            try:
+                req = AutoScraperStartRequest(kurum_id=kurum_id)
+                await auto_scraper_start(req)
+            except HTTPException as e:
+                _send_telegram_message(f"❌ Başlatma hatası: {e.detail}")
+
+        elif cmd == "/stop":
+            if not args:
+                _send_telegram_message("⚠️ <b>Kullanım:</b> /stop &lt;kurum_id&gt;")
+                return {"ok": True}
+
+            kurum_id = args[0]
+            try:
+                req = AutoScraperStopRequest(kurum_id=kurum_id)
+                await auto_scraper_stop(req)
+            except HTTPException as e:
+                _send_telegram_message(f"❌ Stop hatası: {e.detail}")
+
+        else:
+            # Bilinmeyen komut için yardım mesajı
+            help_text = (
+                "🤖 <b>Auto Scraper Komutları</b>\n\n"
+                "/analyze &lt;kurum_id&gt; - Kurum mevzuatlarını analiz et\n"
+                "/start &lt;kurum_id&gt; - Analiz edilmiş kurum için otomatik yüklemeyi başlat\n"
+                "/stop &lt;kurum_id&gt; - Devam eden yüklemeyi durdur\n"
+            )
+            _send_telegram_message(help_text)
+
+        return {"ok": True}
+    except Exception as e:
+        print(f"⚠️ Telegram webhook hatası: {str(e)}")
+        return {"ok": True}
 
 
 if __name__ == "__main__":
