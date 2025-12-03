@@ -4383,13 +4383,15 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
                     })
         
         # Sayıları hesapla
-        mevzuatgpt_count = len(not_uploaded_to_mevzuatgpt)
-        portal_count = len(not_uploaded_to_portal)
+        mevzuatgpt_missing = len(not_uploaded_to_mevzuatgpt)
+        portal_missing = len(not_uploaded_to_portal)
+        mevzuatgpt_existing = max(total_items - mevzuatgpt_missing, 0)
+        portal_existing = max(total_items - portal_missing, 0)
         
         print(f"\n📊 ANALİZ SONUÇLARI:")
         print(f"   Toplam mevzuat: {total_items}")
-        print(f"   MevzuatGPT'de yüklü olmayan: {mevzuatgpt_count}")
-        print(f"   Portal'da yüklü olmayan: {portal_count}")
+        print(f"   MevzuatGPT'de yüklü olmayan: {mevzuatgpt_missing}")
+        print(f"   Portal'da yüklü olmayan: {portal_missing}")
         
         # Global state'e kaydet
         auto_scraper_jobs[req.kurum_id] = {
@@ -4399,10 +4401,35 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
             "kurum_adi": kurum_adi
         }
         
-        # Telegram'a mesaj gönder
-        message = f"📊 <b>{kurum_adi}</b> - Mevzuat Analizi\n\n"
-        message += f"MevzuatGPT: {mevzuatgpt_count}/{total_items}\n"
-        message += f"Portal: {portal_count}/{total_items}"
+        # Telegram'a mesaj gönder - detaylı görünüm + progress bar
+        def _build_progress_bar(done: int, total: int, bar_len: int = 20) -> str:
+            if total <= 0:
+                return "⏳ Henüz veri yok"
+            ratio = done / total
+            filled_len = int(bar_len * ratio)
+            filled = "█" * filled_len
+            empty = "░" * (bar_len - filled_len)
+            percent = round(ratio * 100)
+            return f"{filled}{empty} {percent}%"
+        
+        mevzuatgpt_bar = _build_progress_bar(mevzuatgpt_existing, total_items)
+        portal_bar = _build_progress_bar(portal_existing, total_items)
+        
+        message = f"📊 <b>{kurum_adi}</b> – Mevzuat Analizi\n"
+        message += "━━━━━━━━━━━━━━━━━━━━\n"
+        message += f"📚 <b>Toplam Mevzuat:</b> {total_items}\n\n"
+        
+        message += "🧠 <b>MevzuatGPT</b>\n"
+        message += f"   ✅ Yüklü : {mevzuatgpt_existing}\n"
+        message += f"   ❌ Eksik : {mevzuatgpt_missing}\n"
+        message += f"   📈 Oran : {mevzuatgpt_existing}/{total_items}\n"
+        message += f"   {mevzuatgpt_bar}\n\n"
+        
+        message += "📂 <b>Portal</b>\n"
+        message += f"   ✅ Yüklü : {portal_existing}\n"
+        message += f"   ❌ Eksik : {portal_missing}\n"
+        message += f"   📈 Oran : {portal_existing}/{total_items}\n"
+        message += f"   {portal_bar}"
         
         _send_telegram_message(message)
         
