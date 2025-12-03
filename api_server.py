@@ -4295,6 +4295,15 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
         
         print(f"🔢 DETSIS: {detsis}")
         
+        # Telegram'a analiz başlangıç mesajı gönder
+        try:
+            start_msg = "🔎 <b>Analiz Başladı</b>\n\n"
+            start_msg += f"<b>Kurum:</b> {kurum_adi}\n"
+            start_msg += f"<b>DETSIS:</b> {detsis}"
+            _send_telegram_message(start_msg)
+        except Exception as e:
+            print(f"⚠️ Analiz başlangıç mesajı gönderilemedi: {str(e)}")
+        
         # MevzuatGPT'de yüklü belgeleri çek
         uploaded_docs = []
         cfg = _load_config()
@@ -4438,9 +4447,9 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
             message=f"{kurum_adi} analiz işlemi tamamlandı. Yüklü olmayan mevzuatlar tespit edildi.",
             data={
                 "total_items": total_items,
-                "not_uploaded_mevzuatgpt": mevzuatgpt_count,
-                "not_uploaded_portal": portal_count,
-                "pending_count": mevzuatgpt_count
+                "not_uploaded_mevzuatgpt": mevzuatgpt_missing,
+                "not_uploaded_portal": portal_missing,
+                "pending_count": mevzuatgpt_missing
             }
         )
         
