@@ -128,6 +128,10 @@ app.add_middleware(
 # { id: { "section_title": str, "baslik": str, "link": str } }
 last_item_map: Dict[int, Dict[str, Any]] = {}
 
+# Auto scraper iş yönetimi
+# { kurum_id: { "pending_items": List[Dict], "is_running": bool, "stop_requested": bool } }
+auto_scraper_jobs: Dict[str, Dict[str, Any]] = {}
+
 
 def _load_config() -> Optional[Dict[str, Any]]:
     """Config dosyasını yükler"""
@@ -255,6 +259,46 @@ class ProcessResponse(BaseModel):
     success: bool
     message: str
     data: Optional[ProcessData] = None
+
+
+class AutoScraperAnalyzeRequest(BaseModel):
+    kurum_id: str = Field(..., description="Kurum MongoDB ObjectId")
+    detsis: str = Field(..., description="DETSIS numarası (KAYSİS kurum ID'si)")
+    type: str = Field(default="kaysis", description="Scraper tipi (varsayılan: kaysis)")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "kurum_id": "68bbf6df8ef4e8023c19641d",
+                "detsis": "60521689",
+                "type": "kaysis"
+            }
+        }
+    }
+
+
+class AutoScraperStartRequest(BaseModel):
+    kurum_id: str = Field(..., description="Kurum MongoDB ObjectId")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "kurum_id": "68bbf6df8ef4e8023c19641d"
+            }
+        }
+    }
+
+
+class AutoScraperStopRequest(BaseModel):
+    kurum_id: str = Field(..., description="Kurum MongoDB ObjectId")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "kurum_id": "68bbf6df8ef4e8023c19641d"
+            }
+        }
+    }
 
 
 @app.get("/", tags=["Health"], summary="API kök")
@@ -2909,6 +2953,39 @@ def _delete_from_bunny(pdf_url: str) -> bool:
         return False
 
 
+def _send_telegram_message(message: str) -> bool:
+    """Telegram bot API kullanarak mesaj gönderir"""
+    try:
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        
+        if not bot_token:
+            print("⚠️ TELEGRAM_BOT_TOKEN environment variable bulunamadı")
+            return False
+        
+        if not chat_id:
+            print("⚠️ TELEGRAM_CHAT_ID environment variable bulunamadı")
+            return False
+        
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "HTML"
+        }
+        
+        response = requests.post(url, json=payload, timeout=10)
+        if response.status_code == 200:
+            print(f"✅ Telegram mesajı gönderildi")
+            return True
+        else:
+            print(f"⚠️ Telegram mesaj gönderme hatası: HTTP {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        print(f"⚠️ Telegram mesaj gönderme hatası: {str(e)}")
+        return False
+
+
 def _get_mongodb_client() -> Optional[MongoClient]:
     """MongoDB bağlantısı oluşturur"""
     try:
@@ -4162,6 +4239,410 @@ async def process_item(req: ProcessRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"İşlem sırasında hata oluştu: {str(e)}")
+
+
+@app.post("/api/auto-scraper/analyze", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="Kurum mevzuatlarını analiz et ve yüklü olmayanları tespit et")
+async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
+    """
+    Belirtilen kurumun mevzuatlarını tarar, yüklü olmayan mevzuatları tespit eder
+    ve sayıları Telegram'a gönderir.
+    """
+    try:
+        print("\n" + "="*80)
+        print(f"🚀 Auto Scraper Analyze İsteği Alındı (Kurum ID: {req.kurum_id}, DETSIS: {req.detsis})")
+        print("="*80)
+        
+        # Type kontrolü
+        if req.type.lower() != "kaysis":
+            return ScrapeResponse(
+                success=False,
+                message=f"Desteklenmeyen scraper tipi: {req.type}. Şu an için sadece 'kaysis' desteklenmektedir.",
+                data={"error": "UNSUPPORTED_TYPE", "type": req.type}
+            )
+        
+        # MongoDB'den kurum bilgisini çek
+        kurum_adi = None
+        try:
+            client = _get_mongodb_client()
+            if client:
+                database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+                db = client[database_name]
+                kurumlar_collection = db["kurumlar"]
+                from bson import ObjectId
+                kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.kurum_id)})
+                if kurum_doc:
+                    kurum_adi = kurum_doc.get("kurum_adi", "Bilinmeyen Kurum")
+                client.close()
+        except Exception as e:
+            print(f"⚠️ MongoDB'den kurum bilgisi alınamadı: {str(e)}")
+            kurum_adi = "Bilinmeyen Kurum"
+        
+        print(f"📋 Kurum: {kurum_adi}")
+        print(f"🔢 DETSIS: {req.detsis}")
+        
+        # MevzuatGPT'de yüklü belgeleri çek
+        uploaded_docs = []
+        cfg = _load_config()
+        if cfg:
+            token = _login_with_config(cfg)
+            if token:
+                api_base_url = cfg.get("api_base_url")
+                print(f"📡 API'den yüklü documents çekiliyor...")
+                try:
+                    uploaded_docs = get_uploaded_documents(api_base_url, token, use_streamlit=False)
+                    print(f"✅ {len(uploaded_docs)} document bulundu")
+                except Exception as e:
+                    print(f"⚠️ Documents çekme hatası: {str(e)}")
+        
+        # Portal'da (MongoDB metadata) yüklü belgeleri çek
+        portal_docs = []
+        try:
+            client = _get_mongodb_client()
+            if client:
+                database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+                metadata_collection_name = os.getenv("MONGODB_METADATA_COLLECTION", "metadata")
+                db = client[database_name]
+                metadata_collection = db[metadata_collection_name]
+                cursor = metadata_collection.find({}, {"pdf_adi": 1})
+                count = 0
+                for doc in cursor:
+                    val = (doc.get("pdf_adi") or "").strip()
+                    if val:
+                        portal_docs.append({"pdf_adi": val})
+                        count += 1
+                client.close()
+                print(f"✅ MongoDB'den {count} pdf_adi okundu (portal karşılaştırması için)")
+        except Exception as e:
+            print(f"⚠️ MongoDB portal listesi okunamadı: {str(e)}")
+        
+        # KAYSİS scraper'ı kullan
+        if req.type.lower() == "kaysis":
+            all_sections, stats = scrape_kaysis_mevzuat(detsis=req.detsis)
+            print_results_to_console(all_sections, stats)
+        
+        # Yüklü olmayan mevzuatları tespit et
+        not_uploaded_to_mevzuatgpt = []
+        not_uploaded_to_portal = []
+        total_items = 0
+        
+        for section in all_sections:
+            items = section.get('items', [])
+            for item in items:
+                total_items += 1
+                item_baslik = item.get('baslik', '')
+                item_normalized = normalize_for_exact_match(item_baslik)
+                
+                # MevzuatGPT kontrolü
+                is_in_mevzuatgpt = False
+                for doc in uploaded_docs:
+                    belge_adi = doc.get("belge_adi", "")
+                    if belge_adi:
+                        belge_normalized = normalize_for_exact_match(belge_adi)
+                        if item_normalized == belge_normalized:
+                            is_in_mevzuatgpt = True
+                            break
+                
+                # Portal kontrolü
+                is_in_portal = False
+                for doc in portal_docs:
+                    pdf_adi = doc.get("pdf_adi", "")
+                    if pdf_adi:
+                        pdf_normalized = normalize_for_exact_match(pdf_adi)
+                        if item_normalized == pdf_normalized:
+                            is_in_portal = True
+                            break
+                
+                # Yüklü olmayanları listeye ekle
+                if not is_in_mevzuatgpt:
+                    not_uploaded_to_mevzuatgpt.append({
+                        "baslik": item_baslik,
+                        "link": item.get('link', ''),
+                        "section_title": section.get('section_title', '')
+                    })
+                
+                if not is_in_portal:
+                    not_uploaded_to_portal.append({
+                        "baslik": item_baslik,
+                        "link": item.get('link', ''),
+                        "section_title": section.get('section_title', '')
+                    })
+        
+        # Sayıları hesapla
+        mevzuatgpt_count = len(not_uploaded_to_mevzuatgpt)
+        portal_count = len(not_uploaded_to_portal)
+        
+        print(f"\n📊 ANALİZ SONUÇLARI:")
+        print(f"   Toplam mevzuat: {total_items}")
+        print(f"   MevzuatGPT'de yüklü olmayan: {mevzuatgpt_count}")
+        print(f"   Portal'da yüklü olmayan: {portal_count}")
+        
+        # Global state'e kaydet
+        auto_scraper_jobs[req.kurum_id] = {
+            "pending_items": not_uploaded_to_mevzuatgpt,  # MevzuatGPT'de olmayanlar (tümünü yükle modu kullanılacak)
+            "is_running": False,
+            "stop_requested": False,
+            "kurum_adi": kurum_adi
+        }
+        
+        # Telegram'a mesaj gönder
+        message = f"📊 <b>{kurum_adi}</b> - Mevzuat Analizi\n\n"
+        message += f"MevzuatGPT: {mevzuatgpt_count}/{total_items}\n"
+        message += f"Portal: {portal_count}/{total_items}"
+        
+        _send_telegram_message(message)
+        
+        return ScrapeResponse(
+            success=True,
+            message=f"{kurum_adi} analiz işlemi tamamlandı. Yüklü olmayan mevzuatlar tespit edildi.",
+            data={
+                "total_items": total_items,
+                "not_uploaded_mevzuatgpt": mevzuatgpt_count,
+                "not_uploaded_portal": portal_count,
+                "pending_count": mevzuatgpt_count
+            }
+        )
+        
+    except Exception as e:
+        print(f"❌ Hata oluştu: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Analiz işlemi sırasında hata oluştu: {str(e)}"
+        )
+
+
+@app.post("/api/auto-scraper/start", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="Yüklü olmayan mevzuatları sırayla yükle")
+async def auto_scraper_start(req: AutoScraperStartRequest):
+    """
+    Daha önce analiz edilen kurumun yüklü olmayan mevzuatlarını sırayla yükler.
+    Stop komutu gönderilene kadar devam eder.
+    """
+    try:
+        print("\n" + "="*80)
+        print(f"🚀 Auto Scraper Start İsteği Alındı (Kurum ID: {req.kurum_id})")
+        print("="*80)
+        
+        # Job kontrolü
+        if req.kurum_id not in auto_scraper_jobs:
+            raise HTTPException(
+                status_code=404,
+                detail="Bu kurum için analiz yapılmamış. Önce /api/auto-scraper/analyze endpoint'ini çağırın."
+            )
+        
+        job = auto_scraper_jobs[req.kurum_id]
+        pending_items = job.get("pending_items", [])
+        
+        if not pending_items:
+            return ScrapeResponse(
+                success=True,
+                message="Yüklenecek mevzuat bulunamadı.",
+                data={"processed_count": 0, "total_count": 0}
+            )
+        
+        if job.get("is_running", False):
+            return ScrapeResponse(
+                success=False,
+                message="Bu kurum için yükleme işlemi zaten devam ediyor.",
+                data={"is_running": True}
+            )
+        
+        # Job'u başlat
+        job["is_running"] = True
+        job["stop_requested"] = False
+        
+        kurum_adi = job.get("kurum_adi", "Bilinmeyen Kurum")
+        print(f"📋 Kurum: {kurum_adi}")
+        print(f"📊 Toplam {len(pending_items)} mevzuat yüklenecek")
+        
+        processed_count = 0
+        failed_count = 0
+        
+        try:
+            for i, item in enumerate(pending_items, 1):
+                # Stop kontrolü
+                if job.get("stop_requested", False):
+                    print(f"⏹️ Stop komutu alındı, yükleme durduruluyor...")
+                    break
+                
+                baslik = item.get("baslik", "")
+                link = item.get("link", "")
+                section_title = item.get("section_title", "")
+                
+                print(f"\n{'='*80}")
+                print(f"📄 [{i}/{len(pending_items)}] Yükleniyor: {baslik}")
+                print(f"{'='*80}")
+                
+                try:
+                    # ProcessRequest oluştur (mode="t" - tümünü yükle)
+                    process_req = ProcessRequest(
+                        kurum_id=req.kurum_id,
+                        detsis="",  # Gerekli değil çünkü link zaten var
+                        type="kaysis",
+                        link=link,
+                        mode="t",  # Tümünü yükle - process_item içinde otomatik kontrol yapılıyor
+                        category=section_title,
+                        document_name=baslik,
+                        use_ocr=False
+                    )
+                    
+                    # Mevzuatı yükle
+                    result = await process_item(process_req)
+                    
+                    if result.success:
+                        processed_count += 1
+                        print(f"✅ [{i}/{len(pending_items)}] Başarıyla yüklendi")
+                        
+                        # 5 saniye bekle
+                        import asyncio
+                        await asyncio.sleep(5)
+                        
+                        # MongoDB'den son yüklenen kaydı al
+                        try:
+                            client = _get_mongodb_client()
+                            if client:
+                                database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+                                metadata_collection_name = os.getenv("MONGODB_METADATA_COLLECTION", "metadata")
+                                db = client[database_name]
+                                metadata_collection = db[metadata_collection_name]
+                                
+                                # Son yüklenen kaydı bul (kurum_id ve pdf_adi ile)
+                                metadata_doc = metadata_collection.find_one(
+                                    {"kurum_id": req.kurum_id, "pdf_adi": baslik},
+                                    sort=[("yukleme_tarihi", -1)]
+                                )
+                                
+                                if metadata_doc:
+                                    pdf_url = metadata_doc.get("pdf_url", "")
+                                    belge_turu = metadata_doc.get("belge_turu", section_title)
+                                    
+                                    # Telegram'a bilgi gönder
+                                    telegram_message = f"✅ <b>Yeni Mevzuat Yüklendi</b>\n\n"
+                                    telegram_message += f"<b>Kurum:</b> {kurum_adi}\n"
+                                    telegram_message += f"<b>Belge Adı:</b> {baslik}\n"
+                                    telegram_message += f"<b>Kategori:</b> {belge_turu}\n"
+                                    if pdf_url:
+                                        telegram_message += f"<b>Public URL:</b> <a href=\"{pdf_url}\">{pdf_url}</a>"
+                                    else:
+                                        telegram_message += f"<b>Public URL:</b> Henüz yüklenmedi"
+                                    
+                                    _send_telegram_message(telegram_message)
+                                else:
+                                    print(f"⚠️ MongoDB'den kayıt bulunamadı: {baslik}")
+                                
+                                client.close()
+                        except Exception as e:
+                            print(f"⚠️ MongoDB kayıt okuma hatası: {str(e)}")
+                    else:
+                        failed_count += 1
+                        print(f"❌ [{i}/{len(pending_items)}] Yükleme başarısız: {result.message}")
+                
+                except Exception as e:
+                    failed_count += 1
+                    print(f"❌ [{i}/{len(pending_items)}] Hata: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    # Hata olsa bile devam et
+                    continue
+        
+        finally:
+            # Job'u bitir
+            job["is_running"] = False
+            job["stop_requested"] = False
+        
+        print(f"\n{'='*80}")
+        print(f"✅ Yükleme işlemi tamamlandı")
+        print(f"   Başarılı: {processed_count}")
+        print(f"   Başarısız: {failed_count}")
+        print(f"{'='*80}")
+        
+        # Telegram'a özet gönder
+        summary_message = f"📊 <b>Yükleme İşlemi Tamamlandı</b>\n\n"
+        summary_message += f"<b>Kurum:</b> {kurum_adi}\n"
+        summary_message += f"✅ Başarılı: {processed_count}\n"
+        summary_message += f"❌ Başarısız: {failed_count}\n"
+        summary_message += f"📄 Toplam: {len(pending_items)}"
+        
+        _send_telegram_message(summary_message)
+        
+        return ScrapeResponse(
+            success=True,
+            message=f"Yükleme işlemi tamamlandı. {processed_count} mevzuat başarıyla yüklendi.",
+            data={
+                "processed_count": processed_count,
+                "failed_count": failed_count,
+                "total_count": len(pending_items)
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Hata oluştu: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        # Job'u temizle
+        if req.kurum_id in auto_scraper_jobs:
+            auto_scraper_jobs[req.kurum_id]["is_running"] = False
+        raise HTTPException(
+            status_code=500,
+            detail=f"Yükleme işlemi sırasında hata oluştu: {str(e)}"
+        )
+
+
+@app.post("/api/auto-scraper/stop", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="Yükleme işlemini durdur")
+async def auto_scraper_stop(req: AutoScraperStopRequest):
+    """
+    Devam eden yükleme işlemini durdurur.
+    """
+    try:
+        print("\n" + "="*80)
+        print(f"⏹️ Auto Scraper Stop İsteği Alındı (Kurum ID: {req.kurum_id})")
+        print("="*80)
+        
+        if req.kurum_id not in auto_scraper_jobs:
+            raise HTTPException(
+                status_code=404,
+                detail="Bu kurum için aktif bir işlem bulunamadı."
+            )
+        
+        job = auto_scraper_jobs[req.kurum_id]
+        
+        if not job.get("is_running", False):
+            return ScrapeResponse(
+                success=True,
+                message="Aktif bir yükleme işlemi yok.",
+                data={"is_running": False}
+            )
+        
+        # Stop flag'ini set et
+        job["stop_requested"] = True
+        
+        kurum_adi = job.get("kurum_adi", "Bilinmeyen Kurum")
+        print(f"⏹️ {kurum_adi} için yükleme işlemi durduruluyor...")
+        
+        # Telegram'a bilgi gönder
+        stop_message = f"⏹️ <b>Yükleme İşlemi Durduruldu</b>\n\n"
+        stop_message += f"<b>Kurum:</b> {kurum_adi}"
+        
+        _send_telegram_message(stop_message)
+        
+        return ScrapeResponse(
+            success=True,
+            message="Yükleme işlemi durduruldu. Mevcut mevzuat yüklendikten sonra işlem sonlanacak.",
+            data={"stop_requested": True}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Hata oluştu: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Stop işlemi sırasında hata oluştu: {str(e)}"
+        )
 
 
 if __name__ == "__main__":
