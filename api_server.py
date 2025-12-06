@@ -229,6 +229,7 @@ class ProcessRequest(BaseModel):
     category: Optional[str] = Field(default=None, description="Belge kategorisi (opsiyonel)")
     document_name: Optional[str] = Field(default=None, description="Belge adı (opsiyonel)")
     use_ocr: bool = Field(default=False, description="OCR kullanımı: True ise tüm sayfalar OCR ile işlenir, False ise OCR kullanılmaz (varsayılan: False)")
+    skip_document_check: bool = Field(default=False, description="Belge adı kontrolünü atla (auto_scraper_start için)")
 
     model_config = {
         "json_schema_extra": {
@@ -3943,13 +3944,27 @@ async def process_item(req: ProcessRequest):
         print(f"📂 Kategori: {category}")
 
         # Belge adı kontrolü (PDF indirmeden önce)
-        print("=" * 80)
-        print("🔍 BELGE ADI KONTROLÜ (PDF indirmeden önce)")
-        print("=" * 80)
-        exists_in_mevzuatgpt, exists_in_portal, error_msg = _check_document_name_exists(document_name, mode)
+        # Eğer skip_document_check=True ise, kontrolü atla (auto_scraper_start içinden çağrıldığında)
+        skip_check = getattr(req, 'skip_document_check', False)
+        if skip_check:
+            print("=" * 80)
+            print("⏭️ BELGE ADI KONTROLÜ ATLANDI (Auto Scraper modu)")
+            print("=" * 80)
+            print("   ℹ️ Belge adı kontrolü analiz aşamasında zaten yapıldı.")
+            exists_in_mevzuatgpt = False
+            exists_in_portal = False
+            error_msg = None
+        else:
+            print("=" * 80)
+            print("🔍 BELGE ADI KONTROLÜ (PDF indirmeden önce)")
+            print("=" * 80)
+            exists_in_mevzuatgpt, exists_in_portal, error_msg = _check_document_name_exists(document_name, mode)
         
         # Mode'a göre kontrol ve dinamik mode ayarlama
-        if mode == "t":  # "Hepsini yükle" modu
+        if skip_check:
+            # Auto Scraper modu: Analiz aşamasında zaten kontrol edildi, mode'u olduğu gibi kullan
+            print(f"   ✅ Mode kontrolü atlandı - İşlem modu: {mode.upper()} (analiz aşamasında belirlendi)")
+        elif mode == "t":  # "Hepsini yükle" modu
             if exists_in_mevzuatgpt and exists_in_portal:
                 # Her ikisinde de varsa -> Hata ver
                 print(f"❌ Belge adı kontrolü başarısız: {error_msg}")
@@ -3974,7 +3989,8 @@ async def process_item(req: ProcessRequest):
                 print(f"❌ Belge adı kontrolü başarısız: Bu belge adı Portal'da zaten mevcut.")
                 raise HTTPException(status_code=400, detail="Bu belge adı Portal'da zaten mevcut.")
         
-        print(f"✅ Belge adı kontrolü tamamlandı - İşlem modu: {mode.upper()}")
+        if not skip_check:
+            print(f"✅ Belge adı kontrolü tamamlandı - İşlem modu: {mode.upper()}")
         print("📥 PDF indirme işlemine geçiliyor...")
 
         # PDF'i indir
@@ -4473,16 +4489,30 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
                     })
 
                 # Otomatik yükleme listesi:
-                # - Eğer hem MevzuatGPT'de hem Portal'da yoksa → listeye ALMA
+                # - Eğer hem MevzuatGPT'de hem Portal'da yoksa → listeye AL (her ikisine de yüklenecek, mode="t")
                 # - Eğer her ikisinde de varsa → listeye ALMA
-                # - Sadece birinde varsa → listeye AL (tümünü yükle modu eksik tarafı tamamlayacak)
-                if (is_in_mevzuatgpt and is_in_portal) or (not is_in_mevzuatgpt and not is_in_portal):
+                # - Sadece MevzuatGPT'de varsa → listeye AL (Portal'a yüklenecek, mode="p")
+                # - Sadece Portal'da varsa → listeye AL (MevzuatGPT'ye yüklenecek, mode="m")
+                if is_in_mevzuatgpt and is_in_portal:
+                    # Her ikisinde de varsa, listeye ekleme
                     continue
+
+                # Mode belirleme
+                if is_in_mevzuatgpt and not is_in_portal:
+                    # Sadece MevzuatGPT'de varsa -> Portal'a yükle
+                    item_mode = "p"
+                elif is_in_portal and not is_in_mevzuatgpt:
+                    # Sadece Portal'da varsa -> MevzuatGPT'ye yükle
+                    item_mode = "m"
+                else:
+                    # Hiçbirinde yoksa -> Her ikisine de yükle
+                    item_mode = "t"
 
                 sync_items.append({
                     "baslik": item_baslik,
                     "link": item.get('link', ''),
-                    "section_title": section.get('section_title', '')
+                    "section_title": section.get('section_title', ''),
+                    "mode": item_mode  # Hangi modda yükleneceği
                 })
         
         # Sayıları hesapla
@@ -4495,14 +4525,22 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
         print(f"   Toplam mevzuat: {total_items}")
         print(f"   MevzuatGPT'de yüklü olmayan: {mevzuatgpt_missing}")
         print(f"   Portal'da yüklü olmayan: {portal_missing}")
+        print(f"   Senkronizasyon için yüklenecek: {len(sync_items)}")
         
         # Global state'e kaydet
-        auto_scraper_jobs[req.kurum_id] = {
-            "pending_items": sync_items,  # Sadece biri yüklü olanlar (senkronizasyon için)
-            "is_running": False,
-            "stop_requested": False,
-            "kurum_adi": kurum_adi
-        }
+        try:
+            auto_scraper_jobs[req.kurum_id] = {
+                "pending_items": sync_items,  # Sadece biri yüklü olanlar (senkronizasyon için)
+                "is_running": False,
+                "stop_requested": False,
+                "kurum_adi": kurum_adi
+            }
+            print(f"✅ Job kaydedildi: kurum_id={req.kurum_id}, pending_items={len(sync_items)}")
+        except Exception as e:
+            print(f"❌ Job kaydetme hatası: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
         
         # Telegram'a mesaj gönder - detaylı görünüm + progress bar
         def _build_progress_bar(done: int, total: int, bar_len: int = 20) -> str:
@@ -4534,7 +4572,12 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
         message += f"   📈 Oran : {portal_existing}/{total_items}\n"
         message += f"   {portal_bar}"
         
-        _send_telegram_message(message)
+        # Telegram mesajı gönder (hata olsa bile devam et)
+        try:
+            _send_telegram_message(message)
+        except Exception as e:
+            print(f"⚠️ Telegram mesajı gönderilemedi (analiz sonuçları): {str(e)}")
+            # Telegram hatası olsa bile devam et
         
         return ScrapeResponse(
             success=True,
@@ -4578,12 +4621,15 @@ async def auto_scraper_start(req: AutoScraperStartRequest):
                     type="kaysis"
                 )
                 await auto_scraper_analyze(analyze_req)
+                print(f"✅ Analiz tamamlandı, job kontrol ediliyor...")
             except HTTPException as e:
                 # Telegram'a hata mesajı gönder
                 _send_telegram_message(f"❌ Otomatik analiz hatası: {e.detail}")
                 raise
             except Exception as e:
                 print(f"❌ Otomatik analiz sırasında hata: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 raise HTTPException(
                     status_code=500,
                     detail=f"Otomatik analiz sırasında hata oluştu: {str(e)}"
@@ -4591,9 +4637,11 @@ async def auto_scraper_start(req: AutoScraperStartRequest):
         
         # Analiz sonrası job tekrar kontrol et
         if req.kurum_id not in auto_scraper_jobs:
+            print(f"❌ Analiz sonrasında job bulunamadı! Kurum ID: {req.kurum_id}")
+            print(f"   Mevcut job'lar: {list(auto_scraper_jobs.keys())}")
             raise HTTPException(
                 status_code=500,
-                detail="Analiz sonrasında job oluşturulamadı."
+                detail="Analiz sonrasında job oluşturulamadı. Lütfen tekrar deneyin."
             )
         
         job = auto_scraper_jobs[req.kurum_id]
@@ -4678,22 +4726,26 @@ async def auto_scraper_start(req: AutoScraperStartRequest):
                 baslik = item.get("baslik", "")
                 link = item.get("link", "")
                 section_title = item.get("section_title", "")
+                item_mode = item.get("mode", "t")  # Analiz aşamasında belirlenen mode
                 
                 print(f"\n{'='*80}")
                 print(f"📄 [{i}/{len(pending_items)}] Yükleniyor: {baslik}")
+                print(f"   🔧 Mode: {item_mode.upper()} ({'MevzuatGPT' if item_mode == 'm' else 'Portal' if item_mode == 'p' else 'Tamamı'})")
                 print(f"{'='*80}")
                 
                 try:
-                    # ProcessRequest oluştur (mode="t" - tümünü yükle)
+                    # ProcessRequest oluştur
+                    # skip_document_check=True: Analiz aşamasında zaten kontrol edildi, tekrar kontrol etme
                     process_req = ProcessRequest(
                         kurum_id=req.kurum_id,
                         detsis="",  # Gerekli değil çünkü link zaten var
                         type="kaysis",
                         link=link,
-                        mode="t",  # Tümünü yükle - process_item içinde otomatik kontrol yapılıyor
+                        mode=item_mode,  # Analiz aşamasında belirlenen mode
                         category=section_title,
                         document_name=baslik,
-                        use_ocr=False
+                        use_ocr=False,
+                        skip_document_check=True  # Analiz aşamasında zaten kontrol edildi
                     )
                     
                     # Mevzuatı yükle
