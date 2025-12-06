@@ -2709,6 +2709,85 @@ def _login_with_config(cfg: Dict[str, Any]) -> Optional[str]:
         return None
 
 
+def _get_embeddings_count(api_base_url: str, access_token: str) -> Optional[int]:
+    """Embeddings count endpoint'inden toplam chunk sayısını çeker"""
+    try:
+        url = f"{api_base_url.rstrip('/')}/api/admin/embeddings/count"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        response = requests.get(url, headers=headers, timeout=60)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("success"):
+                result = data.get("data", {})
+                return result.get("total_embeddings", 0)
+        return None
+    except Exception as e:
+        print(f"⚠️ Embeddings count hatası: {str(e)}")
+        return None
+
+
+async def _wait_for_chunk_update(
+    initial_count: int,
+    api_base_url: str,
+    access_token: str,
+    max_checks: int = 15,
+    check_interval: int = 20,
+    belge_adi: str = ""
+) -> Tuple[bool, int]:
+    """
+    Chunk sayısının güncellenmesini bekler.
+    
+    Args:
+        initial_count: Başlangıç chunk sayısı
+        api_base_url: API base URL
+        access_token: Access token
+        max_checks: Maksimum kontrol sayısı (default: 15)
+        check_interval: Her kontrol arası bekleme süresi saniye (default: 20)
+        belge_adi: Belge adı (log için)
+    
+    Returns:
+        (success: bool, final_count: int) - success True ise chunk güncellenmiş, False ise güncellenmemiş
+    """
+    import asyncio
+    
+    print(f"\n🔍 Chunk güncellemesi bekleniyor (Başlangıç: {initial_count:,})...")
+    print(f"   Belge: {belge_adi}")
+    print(f"   Maksimum {max_checks} kontrol, her {check_interval} saniyede bir")
+    
+    for check_num in range(1, max_checks + 1):
+        # Bekle
+        if check_num > 1:  # İlk kontrolde bekleme
+            print(f"   ⏳ {check_interval} saniye bekleniyor... (Kontrol {check_num}/{max_checks})")
+            await asyncio.sleep(check_interval)
+        
+        # Chunk sayısını çek
+        current_count = _get_embeddings_count(api_base_url, access_token)
+        
+        if current_count is None:
+            print(f"   ⚠️ Chunk sayısı çekilemedi (Kontrol {check_num}/{max_checks})")
+            continue
+        
+        print(f"   📊 Kontrol {check_num}/{max_checks}: Mevcut chunk sayısı: {current_count:,}")
+        
+        # Eğer sayı artmışsa, başarılı
+        if current_count > initial_count:
+            print(f"   ✅ Chunk sayısı güncellendi! ({initial_count:,} → {current_count:,})")
+            return True, current_count
+        
+        # Eğer sayı aynıysa, bir sonraki kontrole geç
+        if current_count == initial_count:
+            print(f"   ⏸️ Chunk sayısı henüz değişmedi ({current_count:,})")
+    
+    # 15 kontrolde de değişmediyse, başarısız
+    final_count = _get_embeddings_count(api_base_url, access_token) or initial_count
+    print(f"   ❌ {max_checks} kontrolde chunk sayısı değişmedi! ({initial_count:,} → {final_count:,})")
+    return False, final_count
+
+
 def _transliterate_turkish(text: str) -> str:
     """Türkçe karakterleri İngilizce karşılıklarına çevirir (kaldırmaz)"""
     if not text:
@@ -4566,6 +4645,26 @@ async def auto_scraper_start(req: AutoScraperStartRequest):
         print(f"📋 Kurum: {kurum_adi}")
         print(f"📊 Toplam {len(pending_items)} mevzuat yüklenecek")
         
+        # Başlangıç chunk sayısını çek
+        initial_chunk_count = None
+        cfg = _load_config()
+        api_base_url = None
+        access_token = None
+        if cfg:
+            api_base_url = cfg.get("api_base_url")
+            access_token = _login_with_config(cfg)
+            if api_base_url and access_token:
+                print(f"\n🔍 Başlangıç chunk sayısı çekiliyor...")
+                initial_chunk_count = _get_embeddings_count(api_base_url, access_token)
+                if initial_chunk_count is not None:
+                    print(f"✅ Başlangıç chunk sayısı: {initial_chunk_count:,}")
+                else:
+                    print(f"⚠️ Başlangıç chunk sayısı çekilemedi, chunk kontrolü yapılmayacak")
+            else:
+                print(f"⚠️ API bilgileri alınamadı, chunk kontrolü yapılmayacak")
+        else:
+            print(f"⚠️ Config yüklenemedi, chunk kontrolü yapılmayacak")
+        
         processed_count = 0
         failed_count = 0
         
@@ -4601,8 +4700,7 @@ async def auto_scraper_start(req: AutoScraperStartRequest):
                     result = await process_item(process_req)
                     
                     if result.success:
-                        processed_count += 1
-                        print(f"✅ [{i}/{len(pending_items)}] Başarıyla yüklendi")
+                        print(f"✅ [{i}/{len(pending_items)}] Yükleme tamamlandı")
                         
                         # Stop isteği geldiyse bu noktadan sonra hiçbir ek işlem yapma
                         if job.get("stop_requested", False):
@@ -4617,6 +4715,55 @@ async def auto_scraper_start(req: AutoScraperStartRequest):
                         # 5 saniye bekle
                         import asyncio
                         await asyncio.sleep(5)
+                        
+                        # Chunk kontrolü yap (eğer başlangıç sayısı alındıysa)
+                        chunk_updated = True
+                        final_chunk_count = None  # Chunk kontrolü yapılmadıysa None
+                        chunk_check_performed = False  # Chunk kontrolü yapıldı mı?
+                        if initial_chunk_count is not None and cfg and api_base_url and access_token:
+                            # MevzuatGPT'ye yüklendi mi kontrol et
+                            msg = (result.message or "").lower()
+                            if "mevzuatgpt" in msg or "tüm işlemler tamamlandı" in msg:
+                                # Chunk güncellemesini bekle
+                                chunk_check_performed = True
+                                chunk_updated, final_chunk_count = await _wait_for_chunk_update(
+                                    initial_count=initial_chunk_count,
+                                    api_base_url=api_base_url,
+                                    access_token=access_token,
+                                    max_checks=15,
+                                    check_interval=20,
+                                    belge_adi=baslik
+                                )
+                                
+                                # Chunk güncellenmediyse, döngüyü durdur
+                                if not chunk_updated:
+                                    print(f"\n❌ Chunk güncellenmedi! Döngü durduruluyor.")
+                                    failed_count += 1  # Bu belge başarısız sayılır
+                                    
+                                    # Telegram'a hata mesajı gönder
+                                    error_message = f"❌ <b>Chunk Güncellenmedi</b>\n\n"
+                                    error_message += f"<b>Kurum:</b> {kurum_adi}\n"
+                                    error_message += f"<b>Belge Adı:</b> {baslik}\n"
+                                    error_message += f"<b>İşlem Öncesi Chunk:</b> {initial_chunk_count:,}\n"
+                                    error_message += f"<b>İşlem Sonrası Chunk:</b> {final_chunk_count:,}\n"
+                                    error_message += f"<b>Durum:</b> Chunk'a eklenmemiş, yükleme durduruldu."
+                                    _send_telegram_message(error_message)
+                                    
+                                    break  # Döngüden çık
+                                else:
+                                    # Chunk güncellendi, başlangıç sayısını güncelle
+                                    initial_chunk_count = final_chunk_count
+                                    print(f"✅ Chunk güncellendi, yeni başlangıç sayısı: {initial_chunk_count:,}")
+                        
+                        # Chunk kontrolü başarılıysa (veya kontrol yapılmadıysa) processed_count artır
+                        if chunk_updated:
+                            processed_count += 1
+                            print(f"✅ [{i}/{len(pending_items)}] Başarıyla yüklendi ve chunk kontrolü tamamlandı")
+                        
+                        # Stop kontrolü (chunk kontrolünden sonra)
+                        if job.get("stop_requested", False):
+                            print("⏹️ Stop komutu alındı, ek işlemler atlanıyor...")
+                            break
                         
                         # MongoDB'den son yüklenen kaydı al
                         try:
@@ -4652,12 +4799,18 @@ async def auto_scraper_start(req: AutoScraperStartRequest):
                                     elif "tüm işlemler tamamlandı" in msg or "mevzuatgpt + portal" in msg:
                                         upload_target = "MevzuatGPT + Portal"
                                     
-                                    # Telegram'a bilgi gönder
+                                    # Telegram'a bilgi gönder (chunk bilgisi ile)
                                     telegram_message = f"✅ <b>Yeni Mevzuat Yüklendi</b>\n\n"
                                     telegram_message += f"<b>Kurum:</b> {kurum_adi}\n"
                                     telegram_message += f"<b>Belge Adı:</b> {baslik}\n"
                                     telegram_message += f"<b>Kategori:</b> {belge_turu}\n"
                                     telegram_message += f"<b>Nereye Yüklendi:</b> {upload_target}\n"
+                                    
+                                    # Chunk bilgisi ekle (eğer kontrol yapıldıysa)
+                                    if chunk_check_performed and initial_chunk_count is not None and final_chunk_count is not None:
+                                        telegram_message += f"<b>İşlem Öncesi Chunk:</b> {initial_chunk_count:,}\n"
+                                        telegram_message += f"<b>İşlem Sonrası Chunk:</b> {final_chunk_count:,}\n"
+                                    
                                     if pdf_url:
                                         telegram_message += f"<b>Public URL:</b> <a href=\"{pdf_url}\">{pdf_url}</a>"
                                     else:
