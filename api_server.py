@@ -44,6 +44,7 @@ import shutil
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
+from telegram_handlers import send_telegram_message, handle_telegram_webhook
 
 # .env dosyasını yükle
 load_dotenv()
@@ -140,6 +141,145 @@ def _load_config() -> Optional[Dict[str, Any]]:
             return json.load(f)
     except Exception:
         return None
+
+
+def _find_latest_analysis_json(kurum_id: str) -> Optional[Path]:
+    """Belirtilen kurum ID'si için en son oluşturulan analiz JSON dosyasını bulur"""
+    try:
+        # analiz_{kurum_id}_*.json pattern'i ile dosyaları bul
+        pattern = f"analiz_{kurum_id}_*.json"
+        
+        # Önce analizler klasöründe ara
+        analizler_dir = Path("analizler")
+        json_files = []
+        
+        if analizler_dir.exists() and analizler_dir.is_dir():
+            json_files = list(analizler_dir.glob(pattern))
+            print(f"📁 analizler klasöründe {len(json_files)} dosya bulundu")
+        
+        # Eğer analizler klasöründe bulunamadıysa, ana dizinde ara
+        if not json_files:
+            json_files = list(Path('.').glob(pattern))
+            print(f"📁 ana dizinde {len(json_files)} dosya bulundu")
+        
+        if not json_files:
+            print(f"⚠️ Kurum ID {kurum_id} için analiz JSON dosyası bulunamadı")
+            return None
+        
+        # En son değiştirilen dosyayı al
+        latest_file = max(json_files, key=lambda p: p.stat().st_mtime)
+        print(f"✅ En son analiz dosyası: {latest_file}")
+        return latest_file
+    except Exception as e:
+        print(f"⚠️ JSON dosyası bulma hatası: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def _load_analysis_from_json(kurum_id: str) -> Optional[Dict[str, Any]]:
+    """JSON dosyasından analiz verilerini yükler"""
+    try:
+        json_file = _find_latest_analysis_json(kurum_id)
+        if not json_file:
+            print(f"⚠️ Kurum ID {kurum_id} için analiz JSON dosyası bulunamadı")
+            return None
+        
+        print(f"📄 JSON dosyası bulundu: {json_file.name}")
+        with open(json_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Kurum ID kontrolü
+        if data.get("kurum_id") != kurum_id:
+            print(f"⚠️ JSON dosyasındaki kurum ID ({data.get('kurum_id')}) eşleşmiyor ({kurum_id})")
+            return None
+        
+        return data
+    except Exception as e:
+        print(f"⚠️ JSON dosyası okuma hatası: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def _filter_pending_items_from_json(
+    json_data: Dict[str, Any],
+    uploaded_docs: List[Dict[str, Any]],
+    portal_docs: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """
+    JSON'dan yüklenecek mevzuatları alır ve güncel yüklü belgelere göre filtreler.
+    Sadece gerçekten yüklü olmayanları döndürür.
+    """
+    yuklenecek_mevzuatlar = json_data.get("yuklenecek_mevzuatlar", [])
+    
+    if not yuklenecek_mevzuatlar:
+        print("⚠️ JSON'da yüklenecek mevzuat listesi boş")
+        return []
+    
+    print(f"📋 JSON'dan {len(yuklenecek_mevzuatlar)} mevzuat okundu")
+    print(f"🔍 Güncel yüklü belgeler kontrol ediliyor...")
+    
+    filtered_items = []
+    
+    for item in yuklenecek_mevzuatlar:
+        baslik = item.get("baslik", "")
+        if not baslik:
+            continue
+        
+        item_normalized = normalize_for_exact_match(baslik)
+        mode = item.get("mode", "t")
+        
+        # MevzuatGPT kontrolü
+        is_in_mevzuatgpt = False
+        for doc in uploaded_docs:
+            belge_adi = doc.get("belge_adi", "")
+            if belge_adi:
+                belge_normalized = normalize_for_exact_match(belge_adi)
+                if item_normalized == belge_normalized:
+                    is_in_mevzuatgpt = True
+                    break
+        
+        # Portal kontrolü
+        is_in_portal = False
+        for doc in portal_docs:
+            pdf_adi = doc.get("pdf_adi", "")
+            if pdf_adi:
+                pdf_normalized = normalize_for_exact_match(pdf_adi)
+                if item_normalized == pdf_normalized:
+                    is_in_portal = True
+                    break
+        
+        # Mode'a göre kontrol
+        should_include = False
+        
+        if mode == "m":  # Sadece MevzuatGPT'ye yüklenecek
+            if not is_in_mevzuatgpt:
+                should_include = True
+        elif mode == "p":  # Sadece Portal'a yüklenecek
+            if not is_in_portal:
+                should_include = True
+        elif mode == "t":  # Her ikisine de yüklenecek
+            if not is_in_mevzuatgpt or not is_in_portal:
+                should_include = True
+        
+        # Her ikisinde de varsa ekleme
+        if is_in_mevzuatgpt and is_in_portal:
+            should_include = False
+        
+        if should_include:
+            # Mode'u güncelle (güncel duruma göre)
+            if is_in_mevzuatgpt and not is_in_portal:
+                item["mode"] = "p"  # Sadece Portal'a yükle
+            elif is_in_portal and not is_in_mevzuatgpt:
+                item["mode"] = "m"  # Sadece MevzuatGPT'ye yükle
+            else:
+                item["mode"] = "t"  # Her ikisine de yükle
+            
+            filtered_items.append(item)
+    
+    print(f"✅ Filtreleme tamamlandı: {len(yuklenecek_mevzuatlar)} → {len(filtered_items)} mevzuat yüklenecek")
+    return filtered_items
 
 
 def _get_mongo_collections():
@@ -3033,37 +3173,11 @@ def _delete_from_bunny(pdf_url: str) -> bool:
         return False
 
 
+# Telegram mesaj gönderme fonksiyonu telegram_handlers.py'den import edildi
+# Eski _send_telegram_message fonksiyonu kaldırıldı, send_telegram_message kullanılıyor
 def _send_telegram_message(message: str) -> bool:
-    """Telegram bot API kullanarak mesaj gönderir"""
-    try:
-        bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-        chat_id = os.getenv("TELEGRAM_CHAT_ID")
-        
-        if not bot_token:
-            print("⚠️ TELEGRAM_BOT_TOKEN environment variable bulunamadı")
-            return False
-        
-        if not chat_id:
-            print("⚠️ TELEGRAM_CHAT_ID environment variable bulunamadı")
-            return False
-        
-        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        payload = {
-            "chat_id": chat_id,
-            "text": message,
-            "parse_mode": "HTML"
-        }
-        
-        response = requests.post(url, json=payload, timeout=10)
-        if response.status_code == 200:
-            print(f"✅ Telegram mesajı gönderildi")
-            return True
-        else:
-            print(f"⚠️ Telegram mesaj gönderme hatası: HTTP {response.status_code} - {response.text}")
-            return False
-    except Exception as e:
-        print(f"⚠️ Telegram mesaj gönderme hatası: {str(e)}")
-        return False
+    """Telegram mesaj gönderme (backward compatibility için wrapper)"""
+    return send_telegram_message(message)
 
 
 def _get_mongodb_client() -> Optional[MongoClient]:
@@ -4527,6 +4641,55 @@ async def auto_scraper_analyze(req: AutoScraperAnalyzeRequest):
         print(f"   Portal'da yüklü olmayan: {portal_missing}")
         print(f"   Senkronizasyon için yüklenecek: {len(sync_items)}")
         
+        # JSON dosyasına kaydet
+        try:
+            from datetime import datetime
+            json_data = {
+                "kurum_id": req.kurum_id,
+                "kurum_adi": kurum_adi,
+                "detsis": detsis,
+                "analiz_tarihi": datetime.now().isoformat(),
+                "istatistikler": {
+                    "toplam_mevzuat": total_items,
+                    "mevzuatgpt": {
+                        "yuklu": mevzuatgpt_existing,
+                        "eksik": mevzuatgpt_missing
+                    },
+                    "portal": {
+                        "yuklu": portal_existing,
+                        "eksik": portal_missing
+                    },
+                    "yuklenecek_sayisi": len(sync_items)
+                },
+                "bolumler": all_sections,
+                "yuklenecek_mevzuatlar": sync_items,
+                "mevzuatgpt_eksik_listesi": not_uploaded_to_mevzuatgpt,
+                "portal_eksik_listesi": not_uploaded_to_portal
+            }
+            
+            # Dosya adı oluştur
+            safe_kurum_adi = "".join(c for c in kurum_adi if c.isalnum() or c in (' ', '-', '_')).strip()
+            safe_kurum_adi = safe_kurum_adi.replace(' ', '_')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"analiz_{req.kurum_id}_{safe_kurum_adi}_{timestamp}.json"
+            
+            # analizler klasörünü oluştur (yoksa)
+            analizler_dir = Path("analizler")
+            analizler_dir.mkdir(exist_ok=True)
+            
+            filepath = analizler_dir / filename
+            
+            # JSON dosyasına kaydet
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(json_data, f, ensure_ascii=False, indent=2)
+            
+            print(f"✅ Analiz sonuçları JSON dosyasına kaydedildi: analizler/{filename}")
+        except Exception as e:
+            print(f"⚠️ JSON dosyasına kaydetme hatası: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # Hata olsa bile devam et
+        
         # Global state'e kaydet
         try:
             auto_scraper_jobs[req.kurum_id] = {
@@ -4611,29 +4774,88 @@ async def auto_scraper_start(req: AutoScraperStartRequest):
         print(f"🚀 Auto Scraper Start İsteği Alındı (Kurum ID: {req.kurum_id})")
         print("="*80)
         
-        # Job kontrolü - analiz yoksa otomatik analiz yap
+        # Job kontrolü - önce JSON dosyasından yükle, yoksa analiz yap
         if req.kurum_id not in auto_scraper_jobs:
-            print("ℹ️ Bu kurum için daha önce analiz yapılmamış. Otomatik analiz başlatılıyor...")
-            try:
-                analyze_req = AutoScraperAnalyzeRequest(
-                    kurum_id=req.kurum_id,
-                    detsis=None,
-                    type="kaysis"
+            print("ℹ️ Bu kurum için daha önce analiz yapılmamış.")
+            
+            # Önce JSON dosyasından yüklemeyi dene
+            json_data = _load_analysis_from_json(req.kurum_id)
+            
+            if json_data:
+                print("✅ JSON dosyasından analiz verileri yüklendi")
+                kurum_adi = json_data.get("kurum_adi", "Bilinmeyen Kurum")
+                
+                # Güncel yüklü belgeleri çek
+                uploaded_docs = []
+                portal_docs = []
+                cfg = _load_config()
+                if cfg:
+                    token = _login_with_config(cfg)
+                    if token:
+                        api_base_url = cfg.get("api_base_url")
+                        print(f"📡 API'den yüklü documents çekiliyor...")
+                        try:
+                            uploaded_docs = get_uploaded_documents(api_base_url, token, use_streamlit=False)
+                            print(f"✅ {len(uploaded_docs)} document bulundu")
+                        except Exception as e:
+                            print(f"⚠️ Documents çekme hatası: {str(e)}")
+                
+                # Portal belgelerini çek
+                try:
+                    client = _get_mongodb_client()
+                    if client:
+                        database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+                        metadata_collection_name = os.getenv("MONGODB_METADATA_COLLECTION", "metadata")
+                        db = client[database_name]
+                        metadata_collection = db[metadata_collection_name]
+                        cursor = metadata_collection.find({}, {"pdf_adi": 1})
+                        for doc in cursor:
+                            pdf_adi = doc.get("pdf_adi", "")
+                            if pdf_adi:
+                                portal_docs.append({"pdf_adi": pdf_adi})
+                        client.close()
+                        print(f"✅ MongoDB'den {len(portal_docs)} pdf_adi okundu")
+                except Exception as e:
+                    print(f"⚠️ MongoDB portal listesi okunamadı: {str(e)}")
+                
+                # JSON'dan yüklenecek mevzuatları filtrele
+                pending_items = _filter_pending_items_from_json(
+                    json_data,
+                    uploaded_docs,
+                    portal_docs
                 )
-                await auto_scraper_analyze(analyze_req)
-                print(f"✅ Analiz tamamlandı, job kontrol ediliyor...")
-            except HTTPException as e:
-                # Telegram'a hata mesajı gönder
-                _send_telegram_message(f"❌ Otomatik analiz hatası: {e.detail}")
-                raise
-            except Exception as e:
-                print(f"❌ Otomatik analiz sırasında hata: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Otomatik analiz sırasında hata oluştu: {str(e)}"
-                )
+                
+                # Job oluştur
+                auto_scraper_jobs[req.kurum_id] = {
+                    "pending_items": pending_items,
+                    "is_running": False,
+                    "stop_requested": False,
+                    "kurum_adi": kurum_adi
+                }
+                print(f"✅ Job oluşturuldu: kurum_id={req.kurum_id}, pending_items={len(pending_items)}")
+            else:
+                # JSON dosyası bulunamadı, otomatik analiz yap
+                print("⚠️ JSON dosyası bulunamadı, otomatik analiz başlatılıyor...")
+                try:
+                    analyze_req = AutoScraperAnalyzeRequest(
+                        kurum_id=req.kurum_id,
+                        detsis=None,
+                        type="kaysis"
+                    )
+                    await auto_scraper_analyze(analyze_req)
+                    print(f"✅ Analiz tamamlandı, job kontrol ediliyor...")
+                except HTTPException as e:
+                    # Telegram'a hata mesajı gönder
+                    _send_telegram_message(f"❌ Otomatik analiz hatası: {e.detail}")
+                    raise
+                except Exception as e:
+                    print(f"❌ Otomatik analiz sırasında hata: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Otomatik analiz sırasında hata oluştu: {str(e)}"
+                    )
         
         # Analiz sonrası job tekrar kontrol et
         if req.kurum_id not in auto_scraper_jobs:
@@ -4647,20 +4869,46 @@ async def auto_scraper_start(req: AutoScraperStartRequest):
         job = auto_scraper_jobs[req.kurum_id]
         pending_items = job.get("pending_items", [])
         
-        # Eğer analiz yapılmış ama liste boşsa, tekrar analiz dene
+        # Eğer liste boşsa, JSON'dan tekrar yüklemeyi dene
         if not pending_items:
-            print("ℹ️ Pending liste boş, analiz tekrarlanıyor...")
-            try:
-                analyze_req = AutoScraperAnalyzeRequest(
-                    kurum_id=req.kurum_id,
-                    detsis=None,
-                    type="kaysis"
+            print("ℹ️ Pending liste boş, JSON dosyasından tekrar yükleniyor...")
+            json_data = _load_analysis_from_json(req.kurum_id)
+            if json_data:
+                # Güncel yüklü belgeleri çek
+                uploaded_docs = []
+                portal_docs = []
+                cfg = _load_config()
+                if cfg:
+                    token = _login_with_config(cfg)
+                    if token:
+                        api_base_url = cfg.get("api_base_url")
+                        try:
+                            uploaded_docs = get_uploaded_documents(api_base_url, token, use_streamlit=False)
+                        except Exception as e:
+                            print(f"⚠️ Documents çekme hatası: {str(e)}")
+                
+                try:
+                    client = _get_mongodb_client()
+                    if client:
+                        database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+                        metadata_collection_name = os.getenv("MONGODB_METADATA_COLLECTION", "metadata")
+                        db = client[database_name]
+                        metadata_collection = db[metadata_collection_name]
+                        cursor = metadata_collection.find({}, {"pdf_adi": 1})
+                        for doc in cursor:
+                            pdf_adi = doc.get("pdf_adi", "")
+                            if pdf_adi:
+                                portal_docs.append({"pdf_adi": pdf_adi})
+                        client.close()
+                except Exception as e:
+                    print(f"⚠️ MongoDB portal listesi okunamadı: {str(e)}")
+                
+                pending_items = _filter_pending_items_from_json(
+                    json_data,
+                    uploaded_docs,
+                    portal_docs
                 )
-                await auto_scraper_analyze(analyze_req)
-                job = auto_scraper_jobs.get(req.kurum_id, job)
-                pending_items = job.get("pending_items", [])
-            except Exception as e:
-                print(f"❌ Tekrar analiz sırasında hata: {str(e)}")
+                job["pending_items"] = pending_items
             
             if not pending_items:
                 return ScrapeResponse(
@@ -4992,86 +5240,24 @@ async def telegram_webhook(update: Dict[str, Any]):
     """
     Telegram bot webhook endpoint'i.
     Desteklenen komutlar:
-      - /analyze <kurum_id>
       - /start <kurum_id>
       - /stop <kurum_id>
     """
-    try:
-        # Telegram update içinden mesajı al
-        message = (
-            update.get("message")
-            or update.get("edited_message")
-            or update.get("channel_post")
-            or update.get("edited_channel_post")
-        )
-        if not message:
-            return {"ok": True}
-
-        text = (message.get("text") or "").strip()
-        if not text:
-            return {"ok": True}
-
-        # Komut ve argümanları ayıkla
-        parts = text.split()
-        if not parts:
-            return {"ok": True}
-
-        # /command@BotName formatını normalize et
-        cmd = parts[0].split("@")[0].lower()
-        args = parts[1:]
-
-        print(f"📩 Telegram komutu alındı: {cmd} args={args}")
-
-        if cmd == "/analyze":
-            if not args:
-                _send_telegram_message("⚠️ <b>Kullanım:</b> /analyze &lt;kurum_id&gt;")
-                return {"ok": True}
-
-            kurum_id = args[0]
-            try:
-                req = AutoScraperAnalyzeRequest(kurum_id=kurum_id, detsis=None, type="kaysis")
-                await auto_scraper_analyze(req)
-            except HTTPException as e:
-                _send_telegram_message(f"❌ Analiz hatası: {e.detail}")
-
-        elif cmd == "/start":
-            if not args:
-                _send_telegram_message("⚠️ <b>Kullanım:</b> /start &lt;kurum_id&gt;")
-                return {"ok": True}
-
-            kurum_id = args[0]
-            try:
-                req = AutoScraperStartRequest(kurum_id=kurum_id)
-                await auto_scraper_start(req)
-            except HTTPException as e:
-                _send_telegram_message(f"❌ Başlatma hatası: {e.detail}")
-
-        elif cmd == "/stop":
-            if not args:
-                _send_telegram_message("⚠️ <b>Kullanım:</b> /stop &lt;kurum_id&gt;")
-                return {"ok": True}
-
-            kurum_id = args[0]
-            try:
-                req = AutoScraperStopRequest(kurum_id=kurum_id)
-                await auto_scraper_stop(req)
-            except HTTPException as e:
-                _send_telegram_message(f"❌ Stop hatası: {e.detail}")
-
-        else:
-            # Bilinmeyen komut için yardım mesajı
-            help_text = (
-                "🤖 <b>Auto Scraper Komutları</b>\n\n"
-                "/analyze &lt;kurum_id&gt; - Kurum mevzuatlarını analiz et\n"
-                "/start &lt;kurum_id&gt; - Analiz edilmiş kurum için otomatik yüklemeyi başlat\n"
-                "/stop &lt;kurum_id&gt; - Devam eden yüklemeyi durdur\n"
-            )
-            _send_telegram_message(help_text)
-
-        return {"ok": True}
-    except Exception as e:
-        print(f"⚠️ Telegram webhook hatası: {str(e)}")
-        return {"ok": True}
+    # Handler fonksiyonları
+    async def start_handler(kurum_id: str):
+        req = AutoScraperStartRequest(kurum_id=kurum_id)
+        await auto_scraper_start(req)
+    
+    async def stop_handler(kurum_id: str):
+        req = AutoScraperStopRequest(kurum_id=kurum_id)
+        await auto_scraper_stop(req)
+    
+    # Telegram webhook handler'ı çağır
+    return await handle_telegram_webhook(
+        update=update,
+        start_handler=start_handler,
+        stop_handler=stop_handler
+    )
 
 
 if __name__ == "__main__":
