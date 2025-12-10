@@ -32,38 +32,13 @@ if POPPLER_PATH is None:
 # pdftoppm komutunun tam yolunu belirle (Bu değişkeni aşağıda kullanacağız)
 PDFTOPPM_BIN = os.path.join(POPPLER_PATH, 'pdftoppm') if POPPLER_PATH else 'pdftoppm'
 
-# Tesseract OCR yolunu ayarla
-try:
-    import pytesseract
-    tesseract_paths = [
-        '/usr/bin/tesseract',
-        '/usr/local/bin/tesseract',
-        '/opt/homebrew/bin/tesseract',
-    ]
-    
-    tesseract_found = False
-    for path in tesseract_paths:
-        if os.path.exists(path):
-            pytesseract.pytesseract.tesseract_cmd = path
-            tesseract_found = True
-            break
-    
-    if not tesseract_found:
-        import shutil
-        tesseract_cmd = shutil.which('tesseract')
-        if tesseract_cmd:
-            pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-            tesseract_found = True
-
-except ImportError:
-    pass
-
 class PDFProcessor:
     """PDF işleme ve bölümlendirme sınıfı"""
     
     def __init__(self):
         self._ocr_available = None  # Lazy check for OCR availability
         self._ocr_cache: Dict[tuple, str] = {}  # OCR cache: (pdf_path, page_num) -> text
+        self._rapidocr_instance = None  # RapidOCR instance (lazy initialization)
     
     def _check_ocr_available(self) -> bool:
         """OCR kütüphanesinin kullanılabilir olup olmadığını kontrol eder"""
@@ -71,14 +46,16 @@ class PDFProcessor:
             return self._ocr_available
         
         try:
-            import pytesseract
+            from rapidocr_onnxruntime import RapidOCR
             from pdf2image import convert_from_path
             
-            # Tesseract kontrolü
+            # RapidOCR kontrolü
             try:
-                pytesseract.get_tesseract_version()
+                # RapidOCR instance oluşturmayı dene
+                ocr = RapidOCR()
+                self._rapidocr_instance = ocr
             except Exception as e:
-                print(f"⚠️ Tesseract OCR hatası: {str(e)}")
+                print(f"⚠️ RapidOCR hatası: {str(e)}")
                 self._ocr_available = False
                 return False
             
@@ -98,30 +75,25 @@ class PDFProcessor:
             return True
         except ImportError as e:
             print(f"⚠️ OCR Paketleri eksik: {str(e)}")
+            print("⚠️ 'pip install rapidocr-onnxruntime' komutunu çalıştırın")
             self._ocr_available = False
             return False
     
-    def _get_available_ocr_languages(self) -> str:
-        try:
-            import pytesseract
-            available_langs = pytesseract.get_languages()
-            if 'tur' in available_langs and 'eng' in available_langs:
-                return 'tur+eng'
-            elif 'tur' in available_langs:
-                return 'tur'
-            return 'eng'
-        except Exception:
-            return 'eng'
+    def _get_rapidocr_instance(self):
+        """RapidOCR instance'ını döndürür (lazy initialization)"""
+        if self._rapidocr_instance is None:
+            from rapidocr_onnxruntime import RapidOCR
+            self._rapidocr_instance = RapidOCR()
+        return self._rapidocr_instance
     
     def _extract_text_with_ocr(self, pdf_path: str, page_num: int) -> str:
-        """OCR kullanarak sayfadan metin çıkarır (cache kullanır)"""
+        """OCR kullanarak sayfadan metin çıkarır (cache kullanır) - RapidOCR ile"""
         # Cache kontrolü
         cache_key = (pdf_path, page_num)
         if cache_key in self._ocr_cache:
             return self._ocr_cache[cache_key]
         
         try:
-            import pytesseract
             from pdf2image import convert_from_path
             
             # Poppler ön kontrolü (DÜZELTİLDİ: Tam yol kullanılıyor)
@@ -153,9 +125,22 @@ class PDFProcessor:
             if not images:
                 return ""
             
-            ocr_lang = self._get_available_ocr_languages()
+            # RapidOCR ile metin çıkar
+            ocr = self._get_rapidocr_instance()
+            # PIL Image'i numpy array'e çevir
+            import numpy as np
+            img_array = np.array(images[0])
             
-            text = pytesseract.image_to_string(images[0], lang=ocr_lang)
+            # OCR işlemi
+            result, elapse = ocr(img_array)
+            
+            # Result formatı: [[box, text, score], ...]
+            # Text'leri birleştir
+            if result:
+                text = '\n'.join([item[1] for item in result if item[1]])
+            else:
+                text = ""
+            
             text = text.strip()
             
             # Cache'e kaydet

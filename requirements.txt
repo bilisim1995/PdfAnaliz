@@ -10,7 +10,8 @@ pdf2image>=1.16.3
 pillow>=10.0.0
 
 # OCR (Optical Character Recognition)
-pytesseract>=0.3.10
+rapidocr-onnxruntime>=1.3.0
+numpy>=1.24.0
 
 # Web Scraping ve HTML İşleme
 requests>=2.32.5
@@ -35,8 +36,7 @@ unicodedata2>=15.1.0; python_version < "3.13"
 
 # Not: Sistem paketleri (install.sh ile kurulur):
 # - poppler-utils (PDF2Image için)
-# - tesseract-ocr (OCR için)
-# - tesseract-ocr-tur (Türkçe OCR için)
-# - tesseract-ocr-eng (İngilizce OCR için)
 # - Playwright sistem bağımlılıkları
+# 
+# OCR için RapidOCR kullanılıyor (Python paketi olarak kurulur, sistem paketi gerekmez)
 

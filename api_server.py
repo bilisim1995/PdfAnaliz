@@ -3185,16 +3185,16 @@ def _extract_pdf_text_markdown(pdf_path: str) -> Optional[str]:
                     else:
                         print("⚠️ OCR ile metin çıkarılamadı")
                 else:
-                    print("⚠️ OCR kütüphaneleri kurulu değil veya Poppler/Tesseract eksik")
-                    print("⚠️ Kurulum için: 'apt-get install poppler-utils tesseract-ocr tesseract-ocr-tur' (Linux)")
-                    print("⚠️ veya: 'brew install poppler tesseract tesseract-lang' (macOS)")
+                    print("⚠️ OCR kütüphaneleri kurulu değil veya Poppler/RapidOCR eksik")
+                    print("⚠️ Kurulum için: 'apt-get install poppler-utils' (Linux)")
+                    print("⚠️ Python paketi: 'pip install rapidocr-onnxruntime'")
             except Exception as ocr_error:
                 error_msg = str(ocr_error)
                 print(f"❌ OCR hatası: {error_msg}")
                 if "poppler" in error_msg.lower() or "pdftoppm" in error_msg.lower():
                     print("❌ Poppler kurulu değil! 'apt-get install poppler-utils' komutunu çalıştırın.")
-                elif "tesseract" in error_msg.lower():
-                    print("❌ Tesseract kurulu değil! 'apt-get install tesseract-ocr tesseract-ocr-tur' komutunu çalıştırın.")
+                elif "rapidocr" in error_msg.lower() or "rapid" in error_msg.lower():
+                    print("❌ RapidOCR kurulu değil! 'pip install rapidocr-onnxruntime' komutunu çalıştırın.")
                 import traceback
                 traceback.print_exc()
                 return None
@@ -3255,16 +3255,16 @@ def _extract_pdf_text_markdown(pdf_path: str) -> Optional[str]:
                         else:
                             print("⚠️ OCR ile metin çıkarılamadı")
                     else:
-                        print("⚠️ OCR kütüphaneleri kurulu değil veya Poppler/Tesseract eksik")
-                        print("⚠️ Kurulum için: 'apt-get install poppler-utils tesseract-ocr tesseract-ocr-tur' (Linux)")
-                        print("⚠️ veya: 'brew install poppler tesseract tesseract-lang' (macOS)")
+                        print("⚠️ OCR kütüphaneleri kurulu değil veya Poppler/RapidOCR eksik")
+                        print("⚠️ Kurulum için: 'apt-get install poppler-utils' (Linux)")
+                        print("⚠️ Python paketi: 'pip install rapidocr-onnxruntime'")
                 except Exception as ocr_error:
                     error_msg = str(ocr_error)
                     print(f"❌ OCR hatası: {error_msg}")
                     if "poppler" in error_msg.lower() or "pdftoppm" in error_msg.lower():
                         print("❌ Poppler kurulu değil! 'apt-get install poppler-utils' komutunu çalıştırın.")
-                    elif "tesseract" in error_msg.lower():
-                        print("❌ Tesseract kurulu değil! 'apt-get install tesseract-ocr tesseract-ocr-tur' komutunu çalıştırın.")
+                    elif "rapidocr" in error_msg.lower() or "rapid" in error_msg.lower():
+                        print("❌ RapidOCR kurulu değil! 'pip install rapidocr-onnxruntime' komutunu çalıştırın.")
                     import traceback
                     traceback.print_exc()
                     return None
@@ -3333,17 +3333,17 @@ def _extract_pdf_text_markdown(pdf_path: str) -> Optional[str]:
                         if ocr_text:
                             print(f"⚠️ Çıkarılan metin uzunluğu: {len(ocr_text)} karakter (çok kısa)")
                 else:
-                    print("⚠️ OCR kütüphaneleri kurulu değil veya Poppler/Tesseract eksik")
-                    print("⚠️ Kurulum için: 'apt-get install poppler-utils tesseract-ocr tesseract-ocr-tur' (Linux)")
-                    print("⚠️ veya: 'brew install poppler tesseract tesseract-lang' (macOS)")
+                    print("⚠️ OCR kütüphaneleri kurulu değil veya Poppler/RapidOCR eksik")
+                    print("⚠️ Kurulum için: 'apt-get install poppler-utils' (Linux)")
+                    print("⚠️ Python paketi: 'pip install rapidocr-onnxruntime'")
             except Exception as ocr_error:
                 error_msg = str(ocr_error)
                 print(f"❌ OCR hatası: {error_msg}")
-                # Poppler veya Tesseract eksikse özel mesaj
+                # Poppler veya RapidOCR eksikse özel mesaj
                 if "poppler" in error_msg.lower() or "pdftoppm" in error_msg.lower():
                     print("❌ Poppler kurulu değil! 'apt-get install poppler-utils' komutunu çalıştırın.")
-                elif "tesseract" in error_msg.lower():
-                    print("❌ Tesseract kurulu değil! 'apt-get install tesseract-ocr tesseract-ocr-tur' komutunu çalıştırın.")
+                elif "rapidocr" in error_msg.lower() or "rapid" in error_msg.lower():
+                    print("❌ RapidOCR kurulu değil! 'pip install rapidocr-onnxruntime' komutunu çalıştırın.")
                 import traceback
                 traceback.print_exc()
         
@@ -3433,7 +3433,7 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
         if not processor._check_ocr_available():
             raise HTTPException(
                 status_code=500,
-                detail="OCR kullanımı isteniyor ancak Tesseract OCR kurulu değil. Lütfen 'apt-get install tesseract-ocr tesseract-ocr-tur' komutunu çalıştırın."
+                detail="OCR kullanımı isteniyor ancak RapidOCR kurulu değil. Lütfen 'pip install rapidocr-onnxruntime' komutunu çalıştırın."
             )
         # use_ocr=True ise sadece total_pages için minimal analiz yap (metin kontrolü yapma)
         pdf_structure = processor.analyze_pdf_structure(pdf_path, skip_text_analysis=True)
