@@ -63,6 +63,7 @@ class PDFProcessor:
     
     def __init__(self):
         self._ocr_available = None  # Lazy check for OCR availability
+        self._ocr_cache: Dict[tuple, str] = {}  # OCR cache: (pdf_path, page_num) -> text
     
     def _check_ocr_available(self) -> bool:
         """OCR kütüphanesinin kullanılabilir olup olmadığını kontrol eder"""
@@ -113,7 +114,12 @@ class PDFProcessor:
             return 'eng'
     
     def _extract_text_with_ocr(self, pdf_path: str, page_num: int) -> str:
-        """OCR kullanarak sayfadan metin çıkarır"""
+        """OCR kullanarak sayfadan metin çıkarır (cache kullanır)"""
+        # Cache kontrolü
+        cache_key = (pdf_path, page_num)
+        if cache_key in self._ocr_cache:
+            return self._ocr_cache[cache_key]
+        
         try:
             import pytesseract
             from pdf2image import convert_from_path
@@ -150,11 +156,23 @@ class PDFProcessor:
             ocr_lang = self._get_available_ocr_languages()
             
             text = pytesseract.image_to_string(images[0], lang=ocr_lang)
-            return text.strip()
+            text = text.strip()
+            
+            # Cache'e kaydet
+            self._ocr_cache[cache_key] = text
+            return text
 
         except Exception as e:
             # Hataları yukarı fırlat
             raise e
+    
+    def clear_ocr_cache(self):
+        """OCR cache'ini temizler"""
+        self._ocr_cache.clear()
+    
+    def get_ocr_cache_size(self) -> int:
+        """OCR cache'inde kaç sayfa olduğunu döndürür"""
+        return len(self._ocr_cache)
 
     def analyze_pdf_structure(self, pdf_path: str, skip_text_analysis: bool = False) -> Dict[str, Any]:
         try:

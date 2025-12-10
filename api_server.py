@@ -3458,6 +3458,9 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
     try:
         print("   🔄 Intelligent sections oluşturuluyor...")
         sections = processor.create_intelligent_sections(pdf_path, total_pages, analyzer, use_ocr=use_ocr)
+        if use_ocr:
+            cache_size = processor.get_ocr_cache_size()
+            print(f"   💾 OCR cache: {cache_size} sayfa önbelleğe alındı")
         print(f"✅ [AŞAMA 0.2] {len(sections)} bölüm oluşturuldu (DeepSeek API ile)")
     except Exception as e:
         print(f"❌ [AŞAMA 0.2] Intelligent sections hatası: {str(e)}")
@@ -3475,7 +3478,8 @@ def _analyze_and_prepare_headless(pdf_path: str, pdf_base_name: str, api_key: Op
     metadata_list: List[Dict[str, Any]] = []
     
     if use_ocr:
-        print(f"📸 OCR modu aktif: Tüm sayfalar OCR ile işlenecek")
+        cache_size = processor.get_ocr_cache_size()
+        print(f"📸 OCR modu aktif: Metin çıkarma cache'den yapılacak ({cache_size} sayfa önbellekte)")
     
     for i, section in enumerate(sections):
         print(f"   📎 [{i+1}/{len(sections)}] Bölüm metadata üretiliyor...")
