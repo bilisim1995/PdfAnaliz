@@ -874,6 +874,19 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
             "sections_stats": sections_stats_clean
         }
         
+        # Nihai response'u konsola JSON olarak yazdır
+        print("\n" + "="*80)
+        print("📊 NİHAİ KARŞILAŞTIRMA SONUÇLARI (JSON)")
+        print("="*80)
+        try:
+            import json
+            response_json = json.dumps(response_data, ensure_ascii=False, indent=2)
+            print(response_json)
+        except Exception as e:
+            print(f"⚠️ JSON yazdırma hatası: {str(e)}")
+            print(f"Response data: {response_data}")
+        print("="*80 + "\n")
+        
         return ScrapeResponse(
             success=True,
             message=f"{kurum_adi} tarama işlemi başarıyla tamamlandı." + (" (JSON verisi kullanıldı)" if req.sections else " (Siteden tarama yapıldı)"),
