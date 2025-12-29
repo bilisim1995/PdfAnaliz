@@ -630,12 +630,20 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
                 try:
                     uploaded_docs = get_uploaded_documents(api_base_url, token, use_streamlit=False)
                     print(f"✅ {len(uploaded_docs)} document bulundu")
-                    # Debug: İlk birkaç belge_adi'yi yazdır
+                    # Debug: İlk birkaç belgenin tüm alanlarını yazdır
                     if uploaded_docs:
-                        sample_titles = [doc.get("belge_adi", "") for doc in uploaded_docs[:5]]
-                        print(f"🔍 DEBUG - Örnek belge_adi'ler: {sample_titles}")
+                        print(f"🔍 DEBUG - İlk 3 belgenin tüm alanları:")
+                        for i, doc in enumerate(uploaded_docs[:3]):
+                            print(f"   Belge {i+1}: {doc}")
+                        # Tüm olası alan isimlerini kontrol et
+                        all_fields = set()
+                        for doc in uploaded_docs[:10]:
+                            all_fields.update(doc.keys())
+                        print(f"🔍 DEBUG - Belgelerde bulunan alan isimleri: {sorted(all_fields)}")
                 except Exception as e:
                     print(f"⚠️ Documents çekme hatası: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
             else:
                 print("⚠️ API'ye giriş yapılamadı, belge kontrolü yapılamayacak")
         else:
@@ -699,13 +707,25 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
                 is_uploaded = False
                 
                 # API'den gelen belgelerle karşılaştır (tam eşleşme)
+                # Birden fazla alan kontrol et (API'den dönen belgelerde farklı alan isimleri olabilir)
                 for doc in uploaded_docs:
-                    belge_adi = doc.get("belge_adi", "")
-                    if belge_adi:
-                        belge_normalized = normalize_for_exact_match(belge_adi)
-                        if item_normalized == belge_normalized:
-                            is_uploaded = True
-                            break
+                    doc_titles = [
+                        doc.get("belge_adi", ""),
+                        doc.get("document_name", ""),
+                        doc.get("title", ""),
+                        doc.get("filename", ""),
+                        doc.get("name", "")
+                    ]
+                    
+                    for doc_title in doc_titles:
+                        if doc_title:
+                            doc_normalized = normalize_for_exact_match(doc_title)
+                            if item_normalized == doc_normalized:
+                                is_uploaded = True
+                                break
+                    
+                    if is_uploaded:
+                        break
                 
                 # Portal (MongoDB metadata.pdf_adi karşılaştırması) - tam eşleşme
                 is_in_portal = False
@@ -756,13 +776,25 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
                 is_uploaded = False
                 
                 # API'den gelen belgelerle karşılaştır (tam eşleşme)
+                # Birden fazla alan kontrol et (API'den dönen belgelerde farklı alan isimleri olabilir)
                 for doc in uploaded_docs:
-                    belge_adi = doc.get("belge_adi", "")
-                    if belge_adi:
-                        belge_normalized = normalize_for_exact_match(belge_adi)
-                        if item_normalized == belge_normalized:
-                            is_uploaded = True
-                            break
+                    doc_titles = [
+                        doc.get("belge_adi", ""),
+                        doc.get("document_name", ""),
+                        doc.get("title", ""),
+                        doc.get("filename", ""),
+                        doc.get("name", "")
+                    ]
+                    
+                    for doc_title in doc_titles:
+                        if doc_title:
+                            doc_normalized = normalize_for_exact_match(doc_title)
+                            if item_normalized == doc_normalized:
+                                is_uploaded = True
+                                break
+                    
+                    if is_uploaded:
+                        break
                 
                 if is_uploaded:
                     uploaded_count += 1
