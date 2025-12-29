@@ -829,20 +829,42 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
             "sections_stats": sections_stats_clean
         }
         
-        # Nihai response'u JSON dosyasına kaydet
+        # İlk 50 sonucu konsola göster
+        print("\n" + "="*80)
+        print("📊 İLK 50 KARŞILAŞTIRMA SONUCU")
+        print("="*80)
         try:
             import json
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"karşılaştırma_sonuçları_{kurum_id}_{timestamp}.json"
-            filepath = os.path.join(os.getcwd(), filename)
+            # İlk 50 item'ı topla
+            first_50_items = []
+            item_count = 0
+            for section in response_sections:
+                for item in section.get('items', []):
+                    if item_count < 50:
+                        first_50_items.append({
+                            "id": item.get('id'),
+                            "baslik": item.get('baslik'),
+                            "mevzuatgpt": item.get('mevzuatgpt'),
+                            "portal": item.get('portal'),
+                            "link": item.get('link')
+                        })
+                        item_count += 1
+                    else:
+                        break
+                if item_count >= 50:
+                    break
             
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(response_data, f, ensure_ascii=False, indent=2)
+            result_preview = {
+                "total_sections": response_data.get('total_sections'),
+                "total_items": response_data.get('total_items'),
+                "uploaded_documents_count": response_data.get('uploaded_documents_count'),
+                "first_50_items": first_50_items
+            }
             
-            print(f"✅ Karşılaştırma sonuçları kaydedildi: {filename}")
+            print(json.dumps(result_preview, ensure_ascii=False, indent=2))
         except Exception as e:
-            print(f"⚠️ JSON dosyasına kaydetme hatası: {str(e)}")
+            print(f"⚠️ JSON yazdırma hatası: {str(e)}")
+        print("="*80 + "\n")
         
         return ScrapeResponse(
             success=True,
