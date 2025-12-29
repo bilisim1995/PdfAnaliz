@@ -639,22 +639,8 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
                 try:
                     uploaded_docs = get_uploaded_documents(api_base_url, token, use_streamlit=False)
                     print(f"✅ {len(uploaded_docs)} document bulundu (MevzuatGPT/Supabase)")
-                    # Debug: İlk birkaç belgenin tüm alanlarını yazdır
-                    if uploaded_docs:
-                        print(f"🔍 DEBUG - İlk 3 belgenin tüm alanları:")
-                        for i, doc in enumerate(uploaded_docs[:3]):
-                            print(f"   Belge {i+1}: {doc}")
-                        # Tüm olası alan isimlerini kontrol et
-                        all_fields = set()
-                        for doc in uploaded_docs[:10]:
-                            all_fields.update(doc.keys())
-                        print(f"🔍 DEBUG - Belgelerde bulunan alan isimleri: {sorted(all_fields)}")
-                    else:
-                        print("⚠️ UYARI: uploaded_docs boş! MevzuatGPT'de hiç belge yok veya çekilemedi.")
                 except Exception as e:
                     print(f"⚠️ Documents çekme hatası: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
                     uploaded_docs = []  # Hata durumunda boş liste
             else:
                 print("⚠️ API'ye giriş yapılamadı, belge kontrolü yapılamayacak")
@@ -727,9 +713,7 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
                 matched_doc_field = None
                 
                 # MevzuatGPT/Supabase'den gelen belgelerle karşılaştır
-                if not uploaded_docs:
-                    print(f"⚠️ DEBUG Item {item_id_counter}: uploaded_docs boş, karşılaştırma yapılamıyor")
-                else:
+                if uploaded_docs:
                     # Birden fazla alan kontrol et (API'den dönen belgelerde farklı alan isimleri olabilir)
                     # SADECE TAM EŞLEŞME kullan (is_title_similar çok gevşek, yanlış eşleşmelere neden oluyor)
                     for doc in uploaded_docs:
@@ -753,35 +737,6 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
                         
                         if is_uploaded:
                             break
-                
-                # Debug: İlk birkaç item için karşılaştırma sonuçlarını yazdır
-                if item_id_counter <= 10:
-                    print(f"🔍 DEBUG Item {item_id_counter}:")
-                    print(f"   Orijinal: '{item_baslik}'")
-                    print(f"   Normalize: '{item_normalized}'")
-                    print(f"   MevzuatGPT'de bulundu: {is_uploaded}")
-                    if is_uploaded:
-                        print(f"   ✅ Eşleşen belge: '{matched_doc_title}' (alan: {matched_doc_field})")
-                    else:
-                        # Eşleşme bulunamadı, benzer belgeleri ara
-                        print(f"   ❌ Eşleşme bulunamadı")
-                        # Benzer belgeleri göster (ilk 20 karakteri aynı olanlar)
-                        if uploaded_docs:
-                            similar_count = 0
-                            for doc in uploaded_docs[:50]:  # İlk 50 belgeyi kontrol et
-                                for field_name in ["belge_adi", "title"]:
-                                    val = doc.get(field_name, "")
-                                    if val:
-                                        val_normalized = normalize_for_exact_match(val)
-                                        # İlk 30 karakteri aynı mı kontrol et
-                                        if len(item_normalized) >= 30 and len(val_normalized) >= 30:
-                                            if item_normalized[:30] == val_normalized[:30]:
-                                                similar_count += 1
-                                                if similar_count <= 3:
-                                                    print(f"      Benzer belge ({field_name}): '{val[:80]}...'")
-                                                break
-                            if similar_count == 0:
-                                print(f"      (Benzer belge bulunamadı)")
                 
                 # Portal (MongoDB metadata.pdf_adi karşılaştırması) - tam eşleşme
                 is_in_portal = False
@@ -874,18 +829,20 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
             "sections_stats": sections_stats_clean
         }
         
-        # Nihai response'u konsola JSON olarak yazdır
-        print("\n" + "="*80)
-        print("📊 NİHAİ KARŞILAŞTIRMA SONUÇLARI (JSON)")
-        print("="*80)
+        # Nihai response'u JSON dosyasına kaydet
         try:
             import json
-            response_json = json.dumps(response_data, ensure_ascii=False, indent=2)
-            print(response_json)
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"karşılaştırma_sonuçları_{kurum_id}_{timestamp}.json"
+            filepath = os.path.join(os.getcwd(), filename)
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(response_data, f, ensure_ascii=False, indent=2)
+            
+            print(f"✅ Karşılaştırma sonuçları kaydedildi: {filename}")
         except Exception as e:
-            print(f"⚠️ JSON yazdırma hatası: {str(e)}")
-            print(f"Response data: {response_data}")
-        print("="*80 + "\n")
+            print(f"⚠️ JSON dosyasına kaydetme hatası: {str(e)}")
         
         return ScrapeResponse(
             success=True,
