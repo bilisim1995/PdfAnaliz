@@ -220,9 +220,9 @@ class PortalScanRequest(BaseModel):
 
 class PortalScanWithDataRequest(BaseModel):
     id: str = Field(..., description="Kurum MongoDB ObjectId")
-    detsis: str = Field(..., description="DETSIS numarası (KAYSİS kurum ID'si)")
+    detsis: Optional[str] = Field(default=None, description="DETSIS numarası (opsiyonel, MongoDB'den alınır)")
     type: str = Field(default="kaysis", description="Scraper tipi (varsayılan: kaysis)")
-    sections: Optional[List[Dict[str, Any]]] = Field(default=None, description="Önceden taranmış mevzuat verileri (opsiyonel, varsa tarama yapılmaz)")
+    sections: Optional[List[Dict[str, Any]]] = Field(default=None, description="Önceden taranmış mevzuat verileri (zorunlu, scraper çalıştırılmaz)")
     stats: Optional[Dict[str, Any]] = Field(default=None, description="Önceden taranmış istatistikler (opsiyonel)")
 
     model_config = {
@@ -558,6 +558,8 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
         
         # ADIM 1,2,3: MongoDB'den kurum bilgisini çek ve mevcut belgeleri topla
         kurum_adi = None
+        detsis = req.detsis  # Önce request'ten al
+        
         try:
             client = _get_mongodb_client()
             if client:
@@ -568,13 +570,16 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
                 kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.id)})
                 if kurum_doc:
                     kurum_adi = kurum_doc.get("kurum_adi", "Bilinmeyen Kurum")
+                    # Eğer detsis request'te yoksa MongoDB'den al
+                    if not detsis:
+                        detsis = kurum_doc.get("detsis", "")
                 client.close()
         except Exception as e:
             print(f"⚠️ MongoDB'den kurum bilgisi alınamadı: {str(e)}")
             kurum_adi = "Bilinmeyen Kurum"
         
         print(f"📋 Kurum: {kurum_adi}")
-        print(f"🔢 DETSIS: {req.detsis}")
+        print(f"🔢 DETSIS: {detsis or 'Belirtilmedi'}")
         
         # ADIM 2: API'den yüklü documents'ları çek
         uploaded_docs = []
