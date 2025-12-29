@@ -227,6 +227,14 @@ class PortalScanWithDataRequest(BaseModel):
     stats: Optional[Dict[str, Any]] = Field(default=None, description="Önceden taranmış istatistikler (opsiyonel)")
 
     def __init__(self, **data):
+        # Eğer 'data' wrapper'ı varsa (generate-json response formatı), içindeki değerleri çıkar
+        if 'data' in data and isinstance(data['data'], dict):
+            data_wrapper = data.pop('data')
+            # data içindeki değerleri ana seviyeye taşı
+            for key, value in data_wrapper.items():
+                if key not in data:  # Sadece yoksa ekle, varsa üzerine yazma
+                    data[key] = value
+        
         # id veya kurum_id'den birini normalize et
         if 'kurum_id' in data and 'id' not in data:
             data['id'] = data.pop('kurum_id')
