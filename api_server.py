@@ -755,22 +755,33 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
                             break
                 
                 # Debug: İlk birkaç item için karşılaştırma sonuçlarını yazdır
-                if item_id_counter <= 5:
+                if item_id_counter <= 10:
                     print(f"🔍 DEBUG Item {item_id_counter}:")
                     print(f"   Orijinal: '{item_baslik}'")
                     print(f"   Normalize: '{item_normalized}'")
                     print(f"   MevzuatGPT'de bulundu: {is_uploaded}")
                     if is_uploaded:
-                        print(f"   Eşleşen belge: '{matched_doc_title}' (alan: {matched_doc_field})")
+                        print(f"   ✅ Eşleşen belge: '{matched_doc_title}' (alan: {matched_doc_field})")
                     else:
-                        # İlk 3 belgenin normalize edilmiş hallerini göster
+                        # Eşleşme bulunamadı, benzer belgeleri ara
+                        print(f"   ❌ Eşleşme bulunamadı")
+                        # Benzer belgeleri göster (ilk 20 karakteri aynı olanlar)
                         if uploaded_docs:
-                            print(f"   İlk 3 belgenin normalize edilmiş halleri:")
-                            for i, doc in enumerate(uploaded_docs[:3]):
-                                for field_name in ["belge_adi", "document_name", "title", "filename", "name"]:
+                            similar_count = 0
+                            for doc in uploaded_docs[:50]:  # İlk 50 belgeyi kontrol et
+                                for field_name in ["belge_adi", "title"]:
                                     val = doc.get(field_name, "")
                                     if val:
-                                        print(f"      Belge {i+1} - {field_name}: '{normalize_for_exact_match(val)}'")
+                                        val_normalized = normalize_for_exact_match(val)
+                                        # İlk 30 karakteri aynı mı kontrol et
+                                        if len(item_normalized) >= 30 and len(val_normalized) >= 30:
+                                            if item_normalized[:30] == val_normalized[:30]:
+                                                similar_count += 1
+                                                if similar_count <= 3:
+                                                    print(f"      Benzer belge ({field_name}): '{val[:80]}...'")
+                                                break
+                            if similar_count == 0:
+                                print(f"      (Benzer belge bulunamadı)")
                 
                 # Portal (MongoDB metadata.pdf_adi karşılaştırması) - tam eşleşme
                 is_in_portal = False
