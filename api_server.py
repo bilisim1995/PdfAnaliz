@@ -525,19 +525,27 @@ async def scrape_mevzuatgpt(req: PortalScanRequest):
         )
 
 
-@app.post("/api/mevzuatgpt/scrape-with-data", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="Kurum mevzuat tarama (JSON veri ile)")
+@app.post("/api/mevzuatgpt/scrape-with-data", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="JSON veri ile karşılaştırma ve finalize")
 async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
     """
-    Belirtilen kurumun mevzuatlarını tarar veya gönderilen JSON verilerini kullanır.
-    Eğer 'sections' parametresi gönderilirse, tarama yapılmaz ve gönderilen veriler kullanılır.
-    Diğer adımlar (kurum bilgisi, mevcut belgeler, karşılaştırma, finalize) normal çalışır.
+    Gönderilen JSON verilerini kullanarak API/Elasticsearch karşılaştırması yapar ve finalize eder.
+    Scraper çalıştırılmaz, sadece gönderilen JSON verisi ile işlem yapılır.
+    Adımlar: 1) Kurum bilgisi, 2) API'den belgeler, 3) MongoDB'den belgeler, 4) Karşılaştırma, 5) Finalize
     """
     try:
         print("\n" + "="*80)
-        print(f"🚀 API Endpoint'ten Kurum Mevzuat Tarama İsteği Alındı (JSON Veri ile)")
+        print(f"🚀 JSON Veri ile Karşılaştırma İsteği Alındı")
         print(f"📋 Kurum ID: {req.id}, Type: {req.type}")
-        if req.sections:
-            print(f"📦 Gönderilen JSON verisi kullanılacak ({len(req.sections)} bölüm)")
+        
+        # Sections kontrolü - zorunlu
+        if not req.sections or len(req.sections) == 0:
+            return ScrapeResponse(
+                success=False,
+                message="JSON verisi (sections) gönderilmedi. Bu endpoint sadece JSON verisi ile çalışır.",
+                data={"error": "NO_SECTIONS_PROVIDED"}
+            )
+        
+        print(f"📦 Gönderilen JSON verisi kullanılacak ({len(req.sections)} bölüm)")
         print("="*80)
         
         # Type kontrolü
@@ -568,10 +576,8 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
         print(f"📋 Kurum: {kurum_adi}")
         print(f"🔢 DETSIS: {req.detsis}")
         
-        # Önce API'den yüklü documents'ları çek (çerez kullanmadan, direkt API)
+        # ADIM 2: API'den yüklü documents'ları çek
         uploaded_docs = []
-        # MongoDB'den portal'da bulunan pdf_adi'ları çek
-        portal_docs = []
         cfg = _load_config()
         if cfg:
             token = _login_with_config(cfg)
@@ -587,8 +593,13 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
                         print(f"🔍 DEBUG - Örnek belge_adi'ler: {sample_titles}")
                 except Exception as e:
                     print(f"⚠️ Documents çekme hatası: {str(e)}")
+            else:
+                print("⚠️ API'ye giriş yapılamadı, belge kontrolü yapılamayacak")
+        else:
+            print("⚠️ Config bulunamadı, API belge kontrolü yapılamayacak")
 
-        # MongoDB metadata.pdf_adi -> portal_docs
+        # ADIM 3: MongoDB metadata.pdf_adi -> portal_docs
+        portal_docs = []
         try:
             client = _get_mongodb_client()
             if client:
@@ -609,32 +620,22 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
         except Exception as e:
             print(f"⚠️ MongoDB portal listesi okunamadı: {str(e)}")
         
-        # ADIM 4: KAYSİS scraper'ı kullan VEYA gönderilen JSON'u kullan
-        all_sections = []
-        stats = {}
+        # ADIM 4: Gönderilen JSON verisini kullan (scraper yok)
+        print("📦 Gönderilen JSON verisi kullanılıyor (scraper çalıştırılmıyor)...")
+        all_sections = req.sections
         
-        if req.sections and len(req.sections) > 0:
-            # JSON verisi gönderilmiş, tarama yapma
-            print("📦 Gönderilen JSON verisi kullanılıyor (tarama yapılmıyor)...")
-            all_sections = req.sections
-            # Stats'ı hesapla veya gönderilen stats'ı kullan
-            if req.stats:
-                stats = req.stats
-            else:
-                # Stats'ı hesapla
-                total_items = sum(len(section.get('items', [])) for section in all_sections)
-                stats = {
-                    'total_sections': len(all_sections),
-                    'total_items': total_items,
-                    'uploaded_documents_count': len(uploaded_docs)
-                }
-            print(f"✅ {len(all_sections)} bölüm, {stats.get('total_items', 0)} mevzuat JSON'dan alındı")
+        # Stats'ı hesapla veya gönderilen stats'ı kullan
+        if req.stats:
+            stats = req.stats
         else:
-            # Normal tarama yap
-            print("🌐 KAYSİS sitesinden tarama yapılıyor...")
-            if req.type.lower() == "kaysis":
-                all_sections, stats = scrape_kaysis_mevzuat(detsis=req.detsis)
-                print_results_to_console(all_sections, stats)
+            # Stats'ı hesapla
+            total_items = sum(len(section.get('items', [])) for section in all_sections)
+            stats = {
+                'total_sections': len(all_sections),
+                'total_items': total_items,
+                'uploaded_documents_count': len(uploaded_docs)
+            }
+        print(f"✅ {len(all_sections)} bölüm, {stats.get('total_items', 0)} mevzuat JSON'dan alındı")
         
         # ADIM 5,6: Response hazırla (benzersiz item id'leri, uploaded durumu ve bölüm başlık temizleme)
         item_id_counter = 1
