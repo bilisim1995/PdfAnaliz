@@ -249,6 +249,20 @@ class PortalScanWithDataRequest(BaseModel):
     }
 
 
+class GenerateJsonRequest(BaseModel):
+    id: str = Field(..., description="Kurum MongoDB ObjectId")
+    type: str = Field(default="kaysis", description="Scraper tipi (varsayılan: kaysis)")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "id": "68bbf6df8ef4e8023c19641d",
+                "type": "kaysis"
+            }
+        }
+    }
+
+
 class ProcessRequest(BaseModel):
     kurum_id: str = Field(..., description="Kurum MongoDB ObjectId")
     detsis: str = Field(..., description="DETSIS numarası (KAYSİS kurum ID'si)")
@@ -741,10 +755,11 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
 
 
 @app.post("/api/mevzuatgpt/generate-json", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="Sadece tarama yap ve JSON oluştur")
-async def generate_scrape_json(req: PortalScanRequest):
+async def generate_scrape_json(req: GenerateJsonRequest):
     """
     Sadece scraper'ı çalıştırır, tarama yapar ve toplanan verileri JSON formatında döndürür.
     Karşılaştırma, finalize gibi işlemler yapılmaz. Sadece ham tarama verileri döner.
+    Kurum ID'si direkt olarak KAYSİS URL'inde kullanılır (detsis'e ihtiyaç yok).
     """
     try:
         print("\n" + "="*80)
@@ -759,29 +774,14 @@ async def generate_scrape_json(req: PortalScanRequest):
                 data={"error": "UNSUPPORTED_TYPE", "type": req.type}
             )
         
-        # MongoDB'den kurum bilgisini çek (sadece bilgi için)
-        kurum_adi = None
-        try:
-            client = _get_mongodb_client()
-            if client:
-                database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
-                db = client[database_name]
-                kurumlar_collection = db["kurumlar"]
-                from bson import ObjectId
-                kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.id)})
-                if kurum_doc:
-                    kurum_adi = kurum_doc.get("kurum_adi", "Bilinmeyen Kurum")
-                client.close()
-        except Exception as e:
-            print(f"⚠️ MongoDB'den kurum bilgisi alınamadı: {str(e)}")
-            kurum_adi = "Bilinmeyen Kurum"
+        # Kurum ID'sini direkt detsis olarak kullan
+        kurum_id_str = str(req.id)
+        print(f"📋 Kurum ID: {kurum_id_str}")
+        print(f"🔢 Kurum ID direkt kullanılıyor (detsis olarak)")
         
-        print(f"📋 Kurum: {kurum_adi}")
-        print(f"🔢 DETSIS: {req.detsis}")
-        
-        # Sadece tarama yap (scraper çalıştır)
+        # Sadece tarama yap (scraper çalıştır) - kurum ID'sini detsis olarak kullan
         print("🌐 KAYSİS sitesinden tarama başlatılıyor...")
-        all_sections, stats = scrape_kaysis_mevzuat(detsis=req.detsis)
+        all_sections, stats = scrape_kaysis_mevzuat(detsis=kurum_id_str)
         print_results_to_console(all_sections, stats)
         
         if not all_sections:
@@ -794,8 +794,6 @@ async def generate_scrape_json(req: PortalScanRequest):
         # JSON formatını hazırla (ham veriler, karşılaştırma yok)
         json_data = {
             "kurum_id": req.id,
-            "kurum_adi": kurum_adi,
-            "detsis": req.detsis,
             "type": req.type,
             "sections": all_sections,
             "stats": stats
@@ -805,7 +803,7 @@ async def generate_scrape_json(req: PortalScanRequest):
         
         return ScrapeResponse(
             success=True,
-            message=f"{kurum_adi} için tarama tamamlandı ve JSON oluşturuldu.",
+            message=f"Tarama tamamlandı ve JSON oluşturuldu.",
             data=json_data
         )
         
