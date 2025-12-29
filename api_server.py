@@ -731,26 +731,21 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
                     print(f"⚠️ DEBUG Item {item_id_counter}: uploaded_docs boş, karşılaştırma yapılamıyor")
                 else:
                     # Birden fazla alan kontrol et (API'den dönen belgelerde farklı alan isimleri olabilir)
+                    # SADECE TAM EŞLEŞME kullan (is_title_similar çok gevşek, yanlış eşleşmelere neden oluyor)
                     for doc in uploaded_docs:
                         doc_titles = [
                             ("belge_adi", doc.get("belge_adi", "")),
-                            ("document_name", doc.get("document_name", "")),
                             ("title", doc.get("title", "")),
+                            ("document_name", doc.get("document_name", "")),
                             ("filename", doc.get("filename", "")),
                             ("name", doc.get("name", ""))
                         ]
                         
                         for field_name, doc_title in doc_titles:
                             if doc_title:
-                                # Önce tam eşleşme kontrolü (normalize_for_exact_match ile)
+                                # Sadece tam eşleşme kontrolü (normalize_for_exact_match ile)
                                 doc_normalized = normalize_for_exact_match(doc_title)
                                 if item_normalized == doc_normalized:
-                                    is_uploaded = True
-                                    matched_doc_title = doc_title
-                                    matched_doc_field = field_name
-                                    break
-                                # Tam eşleşme yoksa benzerlik kontrolü yap
-                                if is_title_similar(item_baslik, doc_title):
                                     is_uploaded = True
                                     matched_doc_title = doc_title
                                     matched_doc_field = field_name
@@ -825,31 +820,28 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
                 item_normalized = normalize_for_exact_match(item_baslik)
                 is_uploaded = False
                 
-                # API'den gelen belgelerle karşılaştır (tam eşleşme)
-                # Birden fazla alan kontrol et (API'den dönen belgelerde farklı alan isimleri olabilir)
-                for doc in uploaded_docs:
-                    doc_titles = [
-                        ("belge_adi", doc.get("belge_adi", "")),
-                        ("document_name", doc.get("document_name", "")),
-                        ("title", doc.get("title", "")),
-                        ("filename", doc.get("filename", "")),
-                        ("name", doc.get("name", ""))
-                    ]
-                    
-                    for field_name, doc_title in doc_titles:
-                        if doc_title:
-                            # Önce tam eşleşme kontrolü (normalize_for_exact_match ile)
-                            doc_normalized = normalize_for_exact_match(doc_title)
-                            if item_normalized == doc_normalized:
-                                is_uploaded = True
-                                break
-                            # Tam eşleşme yoksa benzerlik kontrolü yap
-                            if is_title_similar(item_baslik, doc_title):
-                                is_uploaded = True
-                                break
-                    
-                    if is_uploaded:
-                        break
+                # MevzuatGPT/Supabase'den gelen belgelerle karşılaştır
+                # SADECE TAM EŞLEŞME kullan (is_title_similar çok gevşek, yanlış eşleşmelere neden oluyor)
+                if uploaded_docs:
+                    for doc in uploaded_docs:
+                        doc_titles = [
+                            ("belge_adi", doc.get("belge_adi", "")),
+                            ("title", doc.get("title", "")),
+                            ("document_name", doc.get("document_name", "")),
+                            ("filename", doc.get("filename", "")),
+                            ("name", doc.get("name", ""))
+                        ]
+                        
+                        for field_name, doc_title in doc_titles:
+                            if doc_title:
+                                # Sadece tam eşleşme kontrolü (normalize_for_exact_match ile)
+                                doc_normalized = normalize_for_exact_match(doc_title)
+                                if item_normalized == doc_normalized:
+                                    is_uploaded = True
+                                    break
+                        
+                        if is_uploaded:
+                            break
                 
                 if is_uploaded:
                     uploaded_count += 1
