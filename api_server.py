@@ -10,7 +10,9 @@ import uvicorn
 from scrapers.kaysis_scraper import (
     scrape_kaysis_mevzuat,
     print_results_to_console,
-    get_uploaded_documents
+    get_uploaded_documents,
+    get_proxy_from_db,
+    turkish_sentence_case
 )
 import threading
 import re
@@ -757,8 +759,9 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
 @app.post("/api/mevzuatgpt/generate-json", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="Sadece tarama yap ve JSON oluştur")
 async def generate_scrape_json(req: GenerateJsonRequest):
     """
-    Sadece scraper'ı çalıştırır, tarama yapar ve toplanan verileri JSON formatında döndürür.
-    Karşılaştırma, finalize gibi işlemler yapılmaz. Sadece ham tarama verileri döner.
+    Sadece scraper ile siteye bağlanır, tarama yapar ve toplanan verileri JSON formatında döndürür.
+    API bağlantısı, Elasticsearch kontrolü, karşılaştırma gibi işlemler yapılmaz.
+    Sadece saf tarama yapılır ve ham veriler döner.
     Kurum ID'si ile MongoDB'den detsis numarası bulunur ve kullanılır.
     """
     try:
@@ -800,34 +803,213 @@ async def generate_scrape_json(req: GenerateJsonRequest):
         print(f"📋 Kurum ID: {req.id}")
         print(f"🔢 DETSIS: {detsis}")
         
-        # Sadece tarama yap (scraper çalıştır)
-        print("🌐 KAYSİS sitesinden tarama başlatılıyor...")
-        all_sections, stats = scrape_kaysis_mevzuat(detsis=detsis)
-        print_results_to_console(all_sections, stats)
+        # Sadece tarama yap (API bağlantısı yok, sadece siteye bağlan)
+        print("🌐 KAYSİS sitesinden tarama başlatılıyor (sadece scraper, API/Elasticsearch yok)...")
         
-        if not all_sections:
+        # KAYSİS URL'ini oluştur
+        url = f"https://kms.kaysis.gov.tr/Home/Kurum/{detsis}"
+        print(f"📡 Site: {url}")
+        
+        # MongoDB'den güncel proxy bilgilerini çek
+        proxies = get_proxy_from_db()
+        if proxies:
+            print("🔐 Proxy kullanılıyor...")
+        else:
+            print("⚠️ Proxy bulunamadı, direkt bağlantı deneniyor...")
+        
+        # Siteye bağlan ve HTML'i parse et
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Referer': 'https://www.google.com/',
+                'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'cross-site',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1',
+                'Connection': 'keep-alive',
+                'Cache-Control': 'max-age=0'
+            }
+            
+            # curl_cffi ile Chrome taklidi yap (eğer mevcut ise)
+            if CURL_CFFI_AVAILABLE:
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    timeout=1200,  # 20 dakika timeout
+                    proxies=proxies,
+                    impersonate="chrome110"  # Chrome 110 TLS fingerprint
+                )
+            else:
+                response = requests.get(url, headers=headers, timeout=1200, proxies=proxies)
+            
+            if response.status_code != 200:
+                print(f"❌ Siteye erişilemedi: HTTP {response.status_code}")
+                return ScrapeResponse(
+                    success=False,
+                    message=f"Siteye erişilemedi: HTTP {response.status_code}",
+                    data={"error": "SITE_ACCESS_FAILED", "status_code": response.status_code}
+                )
+            
+            # HTML'i parse et
+            soup = BeautifulSoup(response.content, 'html.parser')
+            print("✅ Site başarıyla yüklendi!")
+            
+            print("📋 Accordion yapısı aranıyor...")
+            
+            # accordion2 div'ini bul
+            accordion_div = soup.find('div', {'id': 'accordion2', 'class': 'panel-group'})
+            
+            if not accordion_div:
+                print("⚠️ accordion2 div'i bulunamadı!")
+                return ScrapeResponse(
+                    success=False,
+                    message="Site yapısı bulunamadı (accordion2 div'i yok).",
+                    data={"error": "STRUCTURE_NOT_FOUND"}
+                )
+            
+            print("✅ Accordion yapısı bulundu!")
+            print("🔍 Başlıklar ve içerikler çekiliyor...")
+            
+            # Accordion içindeki tüm panel'leri bul
+            panels = accordion_div.find_all('div', class_='panel')
+            
+            if not panels:
+                panels = accordion_div.find_all(['div'], class_=lambda x: x and 'panel' in str(x).lower())
+            
+            all_sections = []
+            
+            if panels:
+                for panel in panels:
+                    # Panel başlığını bul
+                    panel_heading = panel.find('div', class_=lambda x: x and 'heading' in str(x).lower())
+                    if not panel_heading:
+                        panel_heading = panel.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'span'], class_=lambda x: x and ('heading' in str(x).lower() or 'title' in str(x).lower()))
+                    
+                    heading_text = ""
+                    if panel_heading:
+                        # Başlık içindeki badge/span sayacılarını çıkar
+                        try:
+                            for badge in panel_heading.find_all('span', class_=lambda c: c and 'badge' in c):
+                                badge.decompose()
+                        except Exception:
+                            pass
+                        heading_text = panel_heading.get_text(strip=True)
+                        # Sonda kalan sayıları da temizle (örn: "Kanunlar4" -> "Kanunlar")
+                        heading_text = re.sub(r"\d+\s*$", "", heading_text).strip()
+                    
+                    # Panel içindeki linkleri ve içerikleri bul
+                    panel_body = panel.find('div', class_=lambda x: x and 'body' in str(x).lower())
+                    if not panel_body:
+                        panel_body = panel
+                    
+                    # Panel içindeki tüm linkleri bul
+                    links_in_panel = panel_body.find_all('a', href=True)
+                    
+                    items_in_section = []
+                    for link in links_in_panel:
+                        link_href = link.get('href', '')
+                        
+                        # Link içinde badge span'i varsa atla
+                        if link.find('span', class_='badge'):
+                            continue
+                        
+                        # Link metnini al
+                        link_text = link.get_text(strip=True)
+                        
+                        # Boş veya çok kısa metinleri atla
+                        if not link_text or len(link_text.strip()) < 10:
+                            continue
+                        
+                        # Sadece sayılardan oluşan metinleri atla
+                        if re.match(r'^[\d\s.,]+$', link_text.strip()):
+                            continue
+                        
+                        # Link URL'ini tamamla
+                        if link_href.startswith('http'):
+                            full_url = link_href
+                        elif link_href.startswith('/'):
+                            full_url = f"https://kms.kaysis.gov.tr{link_href}"
+                        else:
+                            full_url = f"{url}{link_href}"
+                        
+                        # Sadece /Home/Goster/ ile başlayan linkleri al
+                        if not full_url or '/Home/Goster/' not in full_url:
+                            continue
+                        
+                        # Metni formatla: yalnızca başlığın ilk harfi büyük, diğerleri küçük (Türkçe)
+                        formatted_text = turkish_sentence_case(link_text)
+                        formatted_text = re.sub(r'\d+$', '', formatted_text).strip()
+                        original_text = link_text.strip()
+                        
+                        items_in_section.append({
+                            'baslik': formatted_text,
+                            'baslik_original': original_text,
+                            'link': full_url
+                        })
+                    
+                    if heading_text or items_in_section:
+                        all_sections.append({
+                            'section_title': heading_text or 'Başlıksız Bölüm',
+                            'items': items_in_section
+                        })
+            
+            print(f"✅ {len(all_sections)} bölüm bulundu")
+            total_items = sum(len(section['items']) for section in all_sections)
+            print(f"📊 Toplam {total_items} mevzuat bulundu")
+            
+            if not all_sections:
+                return ScrapeResponse(
+                    success=False,
+                    message="Tarama başarısız veya sonuç bulunamadı.",
+                    data={"error": "SCRAPE_FAILED", "message": "Hiç bölüm bulunamadı"}
+                )
+            
+            # Stats oluştur (sadece temel bilgiler, API karşılaştırması yok)
+            stats = {
+                'total_sections': len(all_sections),
+                'total_items': total_items
+            }
+            
+            # JSON formatını hazırla (ham veriler, karşılaştırma yok)
+            json_data = {
+                "kurum_id": req.id,
+                "detsis": detsis,
+                "type": req.type,
+                "sections": all_sections,
+                "stats": stats
+            }
+            
+            print(f"✅ JSON oluşturuldu: {len(all_sections)} bölüm, {total_items} mevzuat")
+            
+            return ScrapeResponse(
+                success=True,
+                message=f"Tarama tamamlandı ve JSON oluşturuldu.",
+                data=json_data
+            )
+            
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Bağlantı hatası: {str(e)}")
             return ScrapeResponse(
                 success=False,
-                message="Tarama başarısız veya sonuç bulunamadı.",
-                data={"error": "SCRAPE_FAILED"}
+                message=f"Bağlantı hatası: {str(e)}",
+                data={"error": "CONNECTION_ERROR", "message": str(e)}
             )
-        
-        # JSON formatını hazırla (ham veriler, karşılaştırma yok)
-        json_data = {
-            "kurum_id": req.id,
-            "detsis": detsis,
-            "type": req.type,
-            "sections": all_sections,
-            "stats": stats
-        }
-        
-        print(f"✅ JSON oluşturuldu: {len(all_sections)} bölüm, {stats.get('total_items', 0)} mevzuat")
-        
-        return ScrapeResponse(
-            success=True,
-            message=f"Tarama tamamlandı ve JSON oluşturuldu.",
-            data=json_data
-        )
+        except Exception as e:
+            print(f"❌ Tarama hatası: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return ScrapeResponse(
+                success=False,
+                message=f"Tarama hatası: {str(e)}",
+                data={"error": "SCRAPE_ERROR", "message": str(e)}
+            )
         
     except Exception as e:
         print(f"❌ Hata oluştu: {str(e)}")
