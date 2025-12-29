@@ -216,6 +216,39 @@ class PortalScanRequest(BaseModel):
     }
 
 
+class PortalScanWithDataRequest(BaseModel):
+    id: str = Field(..., description="Kurum MongoDB ObjectId")
+    detsis: str = Field(..., description="DETSIS numarası (KAYSİS kurum ID'si)")
+    type: str = Field(default="kaysis", description="Scraper tipi (varsayılan: kaysis)")
+    sections: Optional[List[Dict[str, Any]]] = Field(default=None, description="Önceden taranmış mevzuat verileri (opsiyonel, varsa tarama yapılmaz)")
+    stats: Optional[Dict[str, Any]] = Field(default=None, description="Önceden taranmış istatistikler (opsiyonel)")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "id": "68bbf6df8ef4e8023c19641d",
+                "detsis": "60521689",
+                "type": "kaysis",
+                "sections": [
+                    {
+                        "section_title": "Kanunlar",
+                        "items": [
+                            {
+                                "baslik": "Örnek Kanun",
+                                "link": "https://kms.kaysis.gov.tr/Home/Goster/123"
+                            }
+                        ]
+                    }
+                ],
+                "stats": {
+                    "total_sections": 1,
+                    "total_items": 1
+                }
+            }
+        }
+    }
+
+
 class ProcessRequest(BaseModel):
     kurum_id: str = Field(..., description="Kurum MongoDB ObjectId")
     detsis: str = Field(..., description="DETSIS numarası (KAYSİS kurum ID'si)")
@@ -264,7 +297,9 @@ async def root():
         "message": "SGK Scraper API",
         "version": "1.0.0",
         "endpoints": {
-            "POST /api/mevzuatgpt/scrape": "Kurum mevzuatlarını tarar ve konsola yazdırır"
+            "POST /api/mevzuatgpt/scrape": "Kurum mevzuatlarını tarar ve konsola yazdırır",
+            "POST /api/mevzuatgpt/scrape-with-data": "Kurum mevzuatlarını tarar veya gönderilen JSON verilerini kullanır",
+            "POST /api/mevzuatgpt/generate-json": "Sadece tarama yapar ve JSON oluşturur (karşılaştırma yapmaz)"
         }
     }
 
@@ -471,6 +506,316 @@ async def scrape_mevzuatgpt(req: PortalScanRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Scraping işlemi sırasında hata oluştu: {str(e)}"
+        )
+
+
+@app.post("/api/mevzuatgpt/scrape-with-data", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="Kurum mevzuat tarama (JSON veri ile)")
+async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
+    """
+    Belirtilen kurumun mevzuatlarını tarar veya gönderilen JSON verilerini kullanır.
+    Eğer 'sections' parametresi gönderilirse, tarama yapılmaz ve gönderilen veriler kullanılır.
+    Diğer adımlar (kurum bilgisi, mevcut belgeler, karşılaştırma, finalize) normal çalışır.
+    """
+    try:
+        print("\n" + "="*80)
+        print(f"🚀 API Endpoint'ten Kurum Mevzuat Tarama İsteği Alındı (JSON Veri ile)")
+        print(f"📋 Kurum ID: {req.id}, Type: {req.type}")
+        if req.sections:
+            print(f"📦 Gönderilen JSON verisi kullanılacak ({len(req.sections)} bölüm)")
+        print("="*80)
+        
+        # Type kontrolü
+        if req.type.lower() != "kaysis":
+            return ScrapeResponse(
+                success=False,
+                message=f"Desteklenmeyen scraper tipi: {req.type}. Şu an için sadece 'kaysis' desteklenmektedir.",
+                data={"error": "UNSUPPORTED_TYPE", "type": req.type}
+            )
+        
+        # ADIM 1,2,3: MongoDB'den kurum bilgisini çek ve mevcut belgeleri topla
+        kurum_adi = None
+        try:
+            client = _get_mongodb_client()
+            if client:
+                database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+                db = client[database_name]
+                kurumlar_collection = db["kurumlar"]
+                from bson import ObjectId
+                kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.id)})
+                if kurum_doc:
+                    kurum_adi = kurum_doc.get("kurum_adi", "Bilinmeyen Kurum")
+                client.close()
+        except Exception as e:
+            print(f"⚠️ MongoDB'den kurum bilgisi alınamadı: {str(e)}")
+            kurum_adi = "Bilinmeyen Kurum"
+        
+        print(f"📋 Kurum: {kurum_adi}")
+        print(f"🔢 DETSIS: {req.detsis}")
+        
+        # Önce API'den yüklü documents'ları çek (çerez kullanmadan, direkt API)
+        uploaded_docs = []
+        # MongoDB'den portal'da bulunan pdf_adi'ları çek
+        portal_docs = []
+        cfg = _load_config()
+        if cfg:
+            token = _login_with_config(cfg)
+            if token:
+                api_base_url = cfg.get("api_base_url")
+                print(f"📡 API'den yüklü documents çekiliyor...")
+                try:
+                    uploaded_docs = get_uploaded_documents(api_base_url, token, use_streamlit=False)
+                    print(f"✅ {len(uploaded_docs)} document bulundu")
+                    # Debug: İlk birkaç belge_adi'yi yazdır
+                    if uploaded_docs:
+                        sample_titles = [doc.get("belge_adi", "") for doc in uploaded_docs[:5]]
+                        print(f"🔍 DEBUG - Örnek belge_adi'ler: {sample_titles}")
+                except Exception as e:
+                    print(f"⚠️ Documents çekme hatası: {str(e)}")
+
+        # MongoDB metadata.pdf_adi -> portal_docs
+        try:
+            client = _get_mongodb_client()
+            if client:
+                database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+                metadata_collection_name = os.getenv("MONGODB_METADATA_COLLECTION", "metadata")
+                db = client[database_name]
+                metadata_collection = db[metadata_collection_name]
+                # Sadece pdf_adi alanını al
+                cursor = metadata_collection.find({}, {"pdf_adi": 1})
+                count = 0
+                for doc in cursor:
+                    val = (doc.get("pdf_adi") or "").strip()
+                    if val:
+                        portal_docs.append({"pdf_adi": val})
+                        count += 1
+                client.close()
+                print(f"✅ MongoDB'den {count} pdf_adi okundu (portal karşılaştırması için)")
+        except Exception as e:
+            print(f"⚠️ MongoDB portal listesi okunamadı: {str(e)}")
+        
+        # ADIM 4: KAYSİS scraper'ı kullan VEYA gönderilen JSON'u kullan
+        all_sections = []
+        stats = {}
+        
+        if req.sections and len(req.sections) > 0:
+            # JSON verisi gönderilmiş, tarama yapma
+            print("📦 Gönderilen JSON verisi kullanılıyor (tarama yapılmıyor)...")
+            all_sections = req.sections
+            # Stats'ı hesapla veya gönderilen stats'ı kullan
+            if req.stats:
+                stats = req.stats
+            else:
+                # Stats'ı hesapla
+                total_items = sum(len(section.get('items', [])) for section in all_sections)
+                stats = {
+                    'total_sections': len(all_sections),
+                    'total_items': total_items,
+                    'uploaded_documents_count': len(uploaded_docs)
+                }
+            print(f"✅ {len(all_sections)} bölüm, {stats.get('total_items', 0)} mevzuat JSON'dan alındı")
+        else:
+            # Normal tarama yap
+            print("🌐 KAYSİS sitesinden tarama yapılıyor...")
+            if req.type.lower() == "kaysis":
+                all_sections, stats = scrape_kaysis_mevzuat(detsis=req.detsis)
+                print_results_to_console(all_sections, stats)
+        
+        # ADIM 5,6: Response hazırla (benzersiz item id'leri, uploaded durumu ve bölüm başlık temizleme)
+        item_id_counter = 1
+        response_sections = []
+        # Önbelleği sıfırla
+        global last_item_map
+        last_item_map = {}
+        for section in all_sections:
+            raw_title = section.get('section_title', '')
+            # Sonunda kalan sayıları temizle (örn: "Kanunlar4" -> "Kanunlar")
+            clean_title = re.sub(r"\d+\s*$", "", raw_title).strip()
+            items = section.get('items', [])
+            items_with_ids = []
+            for item in items:
+                # Yükleme durumunu belirle - tam eşleşme (normalize edilmiş)
+                item_baslik = item.get('baslik', '')
+                item_normalized = normalize_for_exact_match(item_baslik)
+                is_uploaded = False
+                
+                # API'den gelen belgelerle karşılaştır (tam eşleşme)
+                for doc in uploaded_docs:
+                    belge_adi = doc.get("belge_adi", "")
+                    if belge_adi:
+                        belge_normalized = normalize_for_exact_match(belge_adi)
+                        if item_normalized == belge_normalized:
+                            is_uploaded = True
+                            break
+                
+                # Portal (MongoDB metadata.pdf_adi karşılaştırması) - tam eşleşme
+                is_in_portal = False
+                for doc in portal_docs:
+                    pdf_adi = doc.get("pdf_adi", "")
+                    if pdf_adi:
+                        pdf_normalized = normalize_for_exact_match(pdf_adi)
+                        if item_normalized == pdf_normalized:
+                            is_in_portal = True
+                            break
+                
+                # Benzersiz id ver ve önbelleğe yaz
+                item_payload = {
+                    "id": item_id_counter,
+                    "mevzuatgpt": is_uploaded,
+                    "portal": is_in_portal,
+                    "baslik": item.get('baslik', ''),
+                    "link": item.get('link', '')
+                }
+                items_with_ids.append(item_payload)
+
+                # Önbelleğe kategori bilgisini de ekleyerek koy
+                last_item_map[item_id_counter] = {
+                    "section_title": clean_title,
+                    "baslik": item_payload["baslik"],
+                    "link": item_payload["link"]
+                }
+                item_id_counter += 1
+            response_sections.append({
+                "section_title": clean_title,
+                "items_count": len(items_with_ids),
+                "items": items_with_ids
+            })
+        
+        # sections_stats'ı is_title_similar ile yeniden hesapla
+        sections_stats_clean = []
+        for section in all_sections:
+            raw_title = section.get('section_title', '')
+            clean_title = re.sub(r"\d+\s*$", "", raw_title).strip()
+            items = section.get('items', [])
+            
+            uploaded_count = 0
+            not_uploaded_count = 0
+            
+            for item in items:
+                item_baslik = item.get('baslik', '')
+                item_normalized = normalize_for_exact_match(item_baslik)
+                is_uploaded = False
+                
+                # API'den gelen belgelerle karşılaştır (tam eşleşme)
+                for doc in uploaded_docs:
+                    belge_adi = doc.get("belge_adi", "")
+                    if belge_adi:
+                        belge_normalized = normalize_for_exact_match(belge_adi)
+                        if item_normalized == belge_normalized:
+                            is_uploaded = True
+                            break
+                
+                if is_uploaded:
+                    uploaded_count += 1
+                else:
+                    not_uploaded_count += 1
+            
+            sections_stats_clean.append({
+                "section_title": clean_title,
+                "total": len(items),
+                "uploaded": uploaded_count,
+                "not_uploaded": not_uploaded_count
+            })
+        
+        response_data = {
+            "total_sections": stats.get('total_sections', 0),
+            "total_items": stats.get('total_items', 0),
+            "uploaded_documents_count": stats.get('uploaded_documents_count', len(uploaded_docs)),
+            "sections": response_sections,
+            "sections_stats": sections_stats_clean
+        }
+        
+        return ScrapeResponse(
+            success=True,
+            message=f"{kurum_adi} tarama işlemi başarıyla tamamlandı." + (" (JSON verisi kullanıldı)" if req.sections else " (Siteden tarama yapıldı)"),
+            data=response_data
+        )
+        
+    except Exception as e:
+        print(f"❌ Hata oluştu: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Scraping işlemi sırasında hata oluştu: {str(e)}"
+        )
+
+
+@app.post("/api/mevzuatgpt/generate-json", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="Sadece tarama yap ve JSON oluştur")
+async def generate_scrape_json(req: PortalScanRequest):
+    """
+    Sadece scraper'ı çalıştırır, tarama yapar ve toplanan verileri JSON formatında döndürür.
+    Karşılaştırma, finalize gibi işlemler yapılmaz. Sadece ham tarama verileri döner.
+    """
+    try:
+        print("\n" + "="*80)
+        print(f"🚀 JSON Oluşturma İsteği Alındı (Kurum ID: {req.id}, Type: {req.type})")
+        print("="*80)
+        
+        # Type kontrolü
+        if req.type.lower() != "kaysis":
+            return ScrapeResponse(
+                success=False,
+                message=f"Desteklenmeyen scraper tipi: {req.type}. Şu an için sadece 'kaysis' desteklenmektedir.",
+                data={"error": "UNSUPPORTED_TYPE", "type": req.type}
+            )
+        
+        # MongoDB'den kurum bilgisini çek (sadece bilgi için)
+        kurum_adi = None
+        try:
+            client = _get_mongodb_client()
+            if client:
+                database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+                db = client[database_name]
+                kurumlar_collection = db["kurumlar"]
+                from bson import ObjectId
+                kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.id)})
+                if kurum_doc:
+                    kurum_adi = kurum_doc.get("kurum_adi", "Bilinmeyen Kurum")
+                client.close()
+        except Exception as e:
+            print(f"⚠️ MongoDB'den kurum bilgisi alınamadı: {str(e)}")
+            kurum_adi = "Bilinmeyen Kurum"
+        
+        print(f"📋 Kurum: {kurum_adi}")
+        print(f"🔢 DETSIS: {req.detsis}")
+        
+        # Sadece tarama yap (scraper çalıştır)
+        print("🌐 KAYSİS sitesinden tarama başlatılıyor...")
+        all_sections, stats = scrape_kaysis_mevzuat(detsis=req.detsis)
+        print_results_to_console(all_sections, stats)
+        
+        if not all_sections:
+            return ScrapeResponse(
+                success=False,
+                message="Tarama başarısız veya sonuç bulunamadı.",
+                data={"error": "SCRAPE_FAILED"}
+            )
+        
+        # JSON formatını hazırla (ham veriler, karşılaştırma yok)
+        json_data = {
+            "kurum_id": req.id,
+            "kurum_adi": kurum_adi,
+            "detsis": req.detsis,
+            "type": req.type,
+            "sections": all_sections,
+            "stats": stats
+        }
+        
+        print(f"✅ JSON oluşturuldu: {len(all_sections)} bölüm, {stats.get('total_items', 0)} mevzuat")
+        
+        return ScrapeResponse(
+            success=True,
+            message=f"{kurum_adi} için tarama tamamlandı ve JSON oluşturuldu.",
+            data=json_data
+        )
+        
+    except Exception as e:
+        print(f"❌ Hata oluştu: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"JSON oluşturma işlemi sırasında hata oluştu: {str(e)}"
         )
 
 
