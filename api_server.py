@@ -628,17 +628,17 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
         print(f"📋 Kurum: {kurum_adi}")
         print(f"🔢 DETSIS: {detsis or 'Belirtilmedi'}")
         
-        # ADIM 2: API'den yüklü documents'ları çek
+        # ADIM 2: API'den yüklü documents'ları çek (MevzuatGPT/Supabase)
         uploaded_docs = []
         cfg = _load_config()
         if cfg:
             token = _login_with_config(cfg)
             if token:
                 api_base_url = cfg.get("api_base_url")
-                print(f"📡 API'den yüklü documents çekiliyor...")
+                print(f"📡 API'den yüklü documents çekiliyor (MevzuatGPT/Supabase)...")
                 try:
                     uploaded_docs = get_uploaded_documents(api_base_url, token, use_streamlit=False)
-                    print(f"✅ {len(uploaded_docs)} document bulundu")
+                    print(f"✅ {len(uploaded_docs)} document bulundu (MevzuatGPT/Supabase)")
                     # Debug: İlk birkaç belgenin tüm alanlarını yazdır
                     if uploaded_docs:
                         print(f"🔍 DEBUG - İlk 3 belgenin tüm alanları:")
@@ -649,14 +649,19 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
                         for doc in uploaded_docs[:10]:
                             all_fields.update(doc.keys())
                         print(f"🔍 DEBUG - Belgelerde bulunan alan isimleri: {sorted(all_fields)}")
+                    else:
+                        print("⚠️ UYARI: uploaded_docs boş! MevzuatGPT'de hiç belge yok veya çekilemedi.")
                 except Exception as e:
                     print(f"⚠️ Documents çekme hatası: {str(e)}")
                     import traceback
                     traceback.print_exc()
+                    uploaded_docs = []  # Hata durumunda boş liste
             else:
                 print("⚠️ API'ye giriş yapılamadı, belge kontrolü yapılamayacak")
+                uploaded_docs = []
         else:
             print("⚠️ Config bulunamadı, API belge kontrolü yapılamayacak")
+            uploaded_docs = []
 
         # ADIM 3: MongoDB metadata.pdf_adi -> portal_docs
         portal_docs = []
@@ -712,40 +717,47 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
             for item in items:
                 # Yükleme durumunu belirle - tam eşleşme (normalize edilmiş)
                 item_baslik = item.get('baslik', '')
+                if not item_baslik:
+                    # Baslik yoksa atla
+                    continue
+                    
                 item_normalized = normalize_for_exact_match(item_baslik)
                 is_uploaded = False
                 matched_doc_title = None
                 matched_doc_field = None
                 
-                # API'den gelen belgelerle karşılaştır (tam eşleşme)
-                # Birden fazla alan kontrol et (API'den dönen belgelerde farklı alan isimleri olabilir)
-                for doc in uploaded_docs:
-                    doc_titles = [
-                        ("belge_adi", doc.get("belge_adi", "")),
-                        ("document_name", doc.get("document_name", "")),
-                        ("title", doc.get("title", "")),
-                        ("filename", doc.get("filename", "")),
-                        ("name", doc.get("name", ""))
-                    ]
-                    
-                    for field_name, doc_title in doc_titles:
-                        if doc_title:
-                            # Önce tam eşleşme kontrolü (normalize_for_exact_match ile)
-                            doc_normalized = normalize_for_exact_match(doc_title)
-                            if item_normalized == doc_normalized:
-                                is_uploaded = True
-                                matched_doc_title = doc_title
-                                matched_doc_field = field_name
-                                break
-                            # Tam eşleşme yoksa benzerlik kontrolü yap
-                            if is_title_similar(item_baslik, doc_title):
-                                is_uploaded = True
-                                matched_doc_title = doc_title
-                                matched_doc_field = field_name
-                                break
-                    
-                    if is_uploaded:
-                        break
+                # MevzuatGPT/Supabase'den gelen belgelerle karşılaştır
+                if not uploaded_docs:
+                    print(f"⚠️ DEBUG Item {item_id_counter}: uploaded_docs boş, karşılaştırma yapılamıyor")
+                else:
+                    # Birden fazla alan kontrol et (API'den dönen belgelerde farklı alan isimleri olabilir)
+                    for doc in uploaded_docs:
+                        doc_titles = [
+                            ("belge_adi", doc.get("belge_adi", "")),
+                            ("document_name", doc.get("document_name", "")),
+                            ("title", doc.get("title", "")),
+                            ("filename", doc.get("filename", "")),
+                            ("name", doc.get("name", ""))
+                        ]
+                        
+                        for field_name, doc_title in doc_titles:
+                            if doc_title:
+                                # Önce tam eşleşme kontrolü (normalize_for_exact_match ile)
+                                doc_normalized = normalize_for_exact_match(doc_title)
+                                if item_normalized == doc_normalized:
+                                    is_uploaded = True
+                                    matched_doc_title = doc_title
+                                    matched_doc_field = field_name
+                                    break
+                                # Tam eşleşme yoksa benzerlik kontrolü yap
+                                if is_title_similar(item_baslik, doc_title):
+                                    is_uploaded = True
+                                    matched_doc_title = doc_title
+                                    matched_doc_field = field_name
+                                    break
+                        
+                        if is_uploaded:
+                            break
                 
                 # Debug: İlk birkaç item için karşılaştırma sonuçlarını yazdır
                 if item_id_counter <= 5:
