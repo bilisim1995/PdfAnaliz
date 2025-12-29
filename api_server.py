@@ -759,7 +759,7 @@ async def generate_scrape_json(req: GenerateJsonRequest):
     """
     Sadece scraper'ı çalıştırır, tarama yapar ve toplanan verileri JSON formatında döndürür.
     Karşılaştırma, finalize gibi işlemler yapılmaz. Sadece ham tarama verileri döner.
-    Kurum ID'si direkt olarak KAYSİS URL'inde kullanılır (detsis'e ihtiyaç yok).
+    Kurum ID'si ile MongoDB'den detsis numarası bulunur ve kullanılır.
     """
     try:
         print("\n" + "="*80)
@@ -774,14 +774,35 @@ async def generate_scrape_json(req: GenerateJsonRequest):
                 data={"error": "UNSUPPORTED_TYPE", "type": req.type}
             )
         
-        # Kurum ID'sini direkt detsis olarak kullan
-        kurum_id_str = str(req.id)
-        print(f"📋 Kurum ID: {kurum_id_str}")
-        print(f"🔢 Kurum ID direkt kullanılıyor (detsis olarak)")
+        # MongoDB'den kurum bilgisini çek (sadece detsis için)
+        detsis = None
+        try:
+            client = _get_mongodb_client()
+            if client:
+                database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+                db = client[database_name]
+                kurumlar_collection = db["kurumlar"]
+                from bson import ObjectId
+                kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.id)})
+                if kurum_doc:
+                    detsis = kurum_doc.get("detsis", "")
+                client.close()
+        except Exception as e:
+            print(f"⚠️ MongoDB'den kurum bilgisi alınamadı: {str(e)}")
         
-        # Sadece tarama yap (scraper çalıştır) - kurum ID'sini detsis olarak kullan
+        if not detsis:
+            return ScrapeResponse(
+                success=False,
+                message=f"Kurum bulunamadı veya DETSIS numarası bulunamadı. Kurum ID: {req.id}",
+                data={"error": "KURUM_NOT_FOUND", "kurum_id": req.id}
+            )
+        
+        print(f"📋 Kurum ID: {req.id}")
+        print(f"🔢 DETSIS: {detsis}")
+        
+        # Sadece tarama yap (scraper çalıştır)
         print("🌐 KAYSİS sitesinden tarama başlatılıyor...")
-        all_sections, stats = scrape_kaysis_mevzuat(detsis=kurum_id_str)
+        all_sections, stats = scrape_kaysis_mevzuat(detsis=detsis)
         print_results_to_console(all_sections, stats)
         
         if not all_sections:
@@ -794,6 +815,7 @@ async def generate_scrape_json(req: GenerateJsonRequest):
         # JSON formatını hazırla (ham veriler, karşılaştırma yok)
         json_data = {
             "kurum_id": req.id,
+            "detsis": detsis,
             "type": req.type,
             "sections": all_sections,
             "stats": stats
