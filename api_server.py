@@ -219,16 +219,16 @@ class PortalScanRequest(BaseModel):
 
 
 class PortalScanWithDataRequest(BaseModel):
-    id: str = Field(..., description="Kurum MongoDB ObjectId")
+    kurum_id: str = Field(..., description="Kurum MongoDB ObjectId")
     detsis: Optional[str] = Field(default=None, description="DETSIS numarası (opsiyonel, MongoDB'den alınır)")
     type: str = Field(default="kaysis", description="Scraper tipi (varsayılan: kaysis)")
-    sections: Optional[List[Dict[str, Any]]] = Field(default=None, description="Önceden taranmış mevzuat verileri (zorunlu, scraper çalıştırılmaz)")
+    sections: List[Dict[str, Any]] = Field(..., description="Önceden taranmış mevzuat verileri (zorunlu, scraper çalıştırılmaz)")
     stats: Optional[Dict[str, Any]] = Field(default=None, description="Önceden taranmış istatistikler (opsiyonel)")
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "id": "68bbf6df8ef4e8023c19641d",
+                "kurum_id": "68bbf6df8ef4e8023c19641d",
                 "detsis": "60521689",
                 "type": "kaysis",
                 "sections": [
@@ -252,13 +252,13 @@ class PortalScanWithDataRequest(BaseModel):
 
 
 class GenerateJsonRequest(BaseModel):
-    id: str = Field(..., description="Kurum MongoDB ObjectId")
+    kurum_id: str = Field(..., description="Kurum MongoDB ObjectId")
     type: str = Field(default="kaysis", description="Scraper tipi (varsayılan: kaysis)")
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "id": "68bbf6df8ef4e8023c19641d",
+                "kurum_id": "68bbf6df8ef4e8023c19641d",
                 "type": "kaysis"
             }
         }
@@ -535,7 +535,7 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
     try:
         print("\n" + "="*80)
         print(f"🚀 JSON Veri ile Karşılaştırma İsteği Alındı")
-        print(f"📋 Kurum ID: {req.id}, Type: {req.type}")
+        print(f"📋 Kurum ID: {req.kurum_id}, Type: {req.type}")
         
         # Sections kontrolü - zorunlu
         if not req.sections or len(req.sections) == 0:
@@ -567,7 +567,7 @@ async def scrape_mevzuatgpt_with_data(req: PortalScanWithDataRequest):
                 db = client[database_name]
                 kurumlar_collection = db["kurumlar"]
                 from bson import ObjectId
-                kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.id)})
+                kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.kurum_id)})
                 if kurum_doc:
                     kurum_adi = kurum_doc.get("kurum_adi", "Bilinmeyen Kurum")
                     # Eğer detsis request'te yoksa MongoDB'den al
@@ -772,7 +772,7 @@ async def generate_scrape_json(req: GenerateJsonRequest):
     """
     try:
         print("\n" + "="*80)
-        print(f"🚀 JSON Oluşturma İsteği Alındı (Kurum ID: {req.id}, Type: {req.type})")
+        print(f"🚀 JSON Oluşturma İsteği Alındı (Kurum ID: {req.kurum_id}, Type: {req.type})")
         print("="*80)
         
         # Type kontrolü
@@ -792,7 +792,7 @@ async def generate_scrape_json(req: GenerateJsonRequest):
                 db = client[database_name]
                 kurumlar_collection = db["kurumlar"]
                 from bson import ObjectId
-                kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.id)})
+                kurum_doc = kurumlar_collection.find_one({"_id": ObjectId(req.kurum_id)})
                 if kurum_doc:
                     detsis = kurum_doc.get("detsis", "")
                 client.close()
@@ -802,11 +802,11 @@ async def generate_scrape_json(req: GenerateJsonRequest):
         if not detsis:
             return ScrapeResponse(
                 success=False,
-                message=f"Kurum bulunamadı veya DETSIS numarası bulunamadı. Kurum ID: {req.id}",
-                data={"error": "KURUM_NOT_FOUND", "kurum_id": req.id}
+                message=f"Kurum bulunamadı veya DETSIS numarası bulunamadı. Kurum ID: {req.kurum_id}",
+                data={"error": "KURUM_NOT_FOUND", "kurum_id": req.kurum_id}
             )
         
-        print(f"📋 Kurum ID: {req.id}")
+        print(f"📋 Kurum ID: {req.kurum_id}")
         print(f"🔢 DETSIS: {detsis}")
         
         # Sadece tarama yap (API bağlantısı yok, sadece siteye bağlan)
@@ -985,7 +985,7 @@ async def generate_scrape_json(req: GenerateJsonRequest):
             
             # JSON formatını hazırla (ham veriler, karşılaştırma yok)
             json_data = {
-                "kurum_id": req.id,
+                "kurum_id": req.kurum_id,
                 "detsis": detsis,
                 "type": req.type,
                 "sections": all_sections,
