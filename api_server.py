@@ -20,6 +20,7 @@ import asyncio
 import time
 import re
 import os
+import socket
 from pathlib import Path
 import json
 import subprocess
@@ -356,6 +357,7 @@ class QueueStatusResponse(BaseModel):
     total_count: int
     completed_count: int
     remaining_count: int
+    instance_id: str
 
 
 class QueueClearResponse(BaseModel):
@@ -367,7 +369,7 @@ class QueueClearResponse(BaseModel):
 PROCESS_QUEUE = deque()
 PROCESS_QUEUE_LOCK = threading.Lock()
 PROCESS_QUEUE_EVENT = threading.Event()
-PROCESS_QUEUE_SLEEP_SECONDS = 10 * 60
+PROCESS_QUEUE_SLEEP_SECONDS = 3 * 60
 PROCESS_QUEUE_TOTAL_ENQUEUED = 0
 PROCESS_QUEUE_COMPLETED = 0
 PROCESS_QUEUE_IN_FLIGHT = 0
@@ -493,13 +495,15 @@ async def get_queue_status():
         total_count = PROCESS_QUEUE_TOTAL_ENQUEUED
         completed_count = PROCESS_QUEUE_COMPLETED
         remaining_count = queue_size + PROCESS_QUEUE_IN_FLIGHT
+        instance_id = f"{socket.gethostname()}:{os.getpid()}"
     return QueueStatusResponse(
         success=True,
         queue_size=queue_size,
         items=items,
         total_count=total_count,
         completed_count=completed_count,
-        remaining_count=remaining_count
+        remaining_count=remaining_count,
+        instance_id=instance_id
     )
 
 
