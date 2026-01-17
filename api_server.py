@@ -16,6 +16,8 @@ from scrapers.kaysis_scraper import (
     is_title_similar
 )
 import threading
+import asyncio
+import time
 import re
 import os
 from pathlib import Path
@@ -23,6 +25,7 @@ import json
 import subprocess
 import platform
 from datetime import datetime
+from collections import deque
 
 # curl_cffi import kontrolü
 try:
@@ -335,6 +338,107 @@ class ProcessResponse(BaseModel):
     data: Optional[ProcessData] = None
 
 
+class BulkProcessRequest(BaseModel):
+    items: List[ProcessRequest] = Field(..., description="Sırayla işlenecek process istekleri listesi")
+
+
+class QueueEnqueueResponse(BaseModel):
+    success: bool
+    message: str
+    enqueued_count: int
+    queue_size: int
+
+
+class QueueStatusResponse(BaseModel):
+    success: bool
+    queue_size: int
+    items: List[Dict[str, Any]]
+    total_count: int
+    completed_count: int
+    remaining_count: int
+
+
+class QueueClearResponse(BaseModel):
+    success: bool
+    cleared_count: int
+    queue_size: int
+
+
+PROCESS_QUEUE = deque()
+PROCESS_QUEUE_LOCK = threading.Lock()
+PROCESS_QUEUE_EVENT = threading.Event()
+PROCESS_QUEUE_SLEEP_SECONDS = 10 * 60
+PROCESS_QUEUE_TOTAL_ENQUEUED = 0
+PROCESS_QUEUE_COMPLETED = 0
+PROCESS_QUEUE_IN_FLIGHT = 0
+PROCESS_QUEUE_WORKER_THREAD = None
+PROCESS_QUEUE_WORKER_RUNNING = False
+PROCESS_QUEUE_STOP_REQUESTED = False
+
+
+def _enqueue_process_item(item: ProcessRequest) -> None:
+    with PROCESS_QUEUE_LOCK:
+        PROCESS_QUEUE.append(item)
+        global PROCESS_QUEUE_TOTAL_ENQUEUED
+        PROCESS_QUEUE_TOTAL_ENQUEUED += 1
+        global PROCESS_QUEUE_STOP_REQUESTED
+        PROCESS_QUEUE_STOP_REQUESTED = False
+        PROCESS_QUEUE_EVENT.set()
+
+
+def _run_process_item_sync(item: ProcessRequest) -> None:
+    try:
+        asyncio.run(process_item(item))
+    except Exception as e:
+        print(f"⚠️ Queue işlenirken hata: {str(e)}")
+
+
+def _process_queue_worker() -> None:
+    print("🧵 Queue worker başlatıldı")
+    while True:
+        PROCESS_QUEUE_EVENT.wait()
+        with PROCESS_QUEUE_LOCK:
+            if PROCESS_QUEUE_STOP_REQUESTED and not PROCESS_QUEUE:
+                PROCESS_QUEUE_EVENT.clear()
+                break
+            if not PROCESS_QUEUE:
+                PROCESS_QUEUE_EVENT.clear()
+                continue
+            item = PROCESS_QUEUE.popleft()
+            global PROCESS_QUEUE_IN_FLIGHT
+            PROCESS_QUEUE_IN_FLIGHT = 1
+            if not PROCESS_QUEUE:
+                PROCESS_QUEUE_EVENT.clear()
+        print("🚀 Queue item işleniyor...")
+        try:
+            _run_process_item_sync(item)
+        finally:
+            with PROCESS_QUEUE_LOCK:
+                global PROCESS_QUEUE_COMPLETED
+                PROCESS_QUEUE_COMPLETED += 1
+                PROCESS_QUEUE_IN_FLIGHT = 0
+        print(f"⏳ İş tamamlandı, {PROCESS_QUEUE_SLEEP_SECONDS // 60} dk bekleniyor...")
+        time.sleep(PROCESS_QUEUE_SLEEP_SECONDS)
+        with PROCESS_QUEUE_LOCK:
+            if PROCESS_QUEUE_STOP_REQUESTED and not PROCESS_QUEUE:
+                break
+    with PROCESS_QUEUE_LOCK:
+        global PROCESS_QUEUE_WORKER_RUNNING
+        PROCESS_QUEUE_WORKER_RUNNING = False
+    print("🛑 Queue worker durduruldu")
+
+
+def _ensure_queue_worker_running() -> None:
+    with PROCESS_QUEUE_LOCK:
+        global PROCESS_QUEUE_WORKER_RUNNING, PROCESS_QUEUE_WORKER_THREAD, PROCESS_QUEUE_STOP_REQUESTED
+        if PROCESS_QUEUE_WORKER_RUNNING:
+            return
+        PROCESS_QUEUE_STOP_REQUESTED = False
+        PROCESS_QUEUE_WORKER_RUNNING = True
+        PROCESS_QUEUE_WORKER_THREAD = threading.Thread(target=_process_queue_worker, daemon=True)
+        PROCESS_QUEUE_WORKER_THREAD.start()
+
+
 @app.get("/", tags=["Health"], summary="API kök")
 async def root():
     """API root endpoint"""
@@ -347,6 +451,77 @@ async def root():
             "POST /api/mevzuatgpt/generate-json": "Sadece tarama yapar ve JSON oluşturur (karşılaştırma yapmaz)"
         }
     }
+
+
+@app.on_event("startup")
+async def start_queue_worker() -> None:
+    _ensure_queue_worker_running()
+
+
+@app.post("/api/kurum/process/queue", response_model=QueueEnqueueResponse, tags=["SGK Scraper"], summary="Process isteklerini kuyruğa al")
+async def enqueue_process_items(req: BulkProcessRequest):
+    for item in req.items:
+        _enqueue_process_item(item)
+    _ensure_queue_worker_running()
+    with PROCESS_QUEUE_LOCK:
+        queue_size = len(PROCESS_QUEUE)
+    return QueueEnqueueResponse(
+        success=True,
+        message="İstekler kuyruğa alındı",
+        enqueued_count=len(req.items),
+        queue_size=queue_size
+    )
+
+
+@app.get("/api/kurum/process/queue/status", response_model=QueueStatusResponse, tags=["SGK Scraper"], summary="Queue durumunu getir")
+async def get_queue_status():
+    with PROCESS_QUEUE_LOCK:
+        queue_size = len(PROCESS_QUEUE)
+        items = [
+            {
+                "kurum_id": item.kurum_id,
+                "detsis": item.detsis,
+                "type": item.type,
+                "link": item.link,
+                "mode": item.mode,
+                "category": item.category,
+                "document_name": item.document_name,
+                "use_ocr": item.use_ocr
+            }
+            for item in PROCESS_QUEUE
+        ]
+        total_count = PROCESS_QUEUE_TOTAL_ENQUEUED
+        completed_count = PROCESS_QUEUE_COMPLETED
+        remaining_count = queue_size + PROCESS_QUEUE_IN_FLIGHT
+    return QueueStatusResponse(
+        success=True,
+        queue_size=queue_size,
+        items=items,
+        total_count=total_count,
+        completed_count=completed_count,
+        remaining_count=remaining_count
+    )
+
+
+@app.post("/api/kurum/process/queue/clear", response_model=QueueClearResponse, tags=["SGK Scraper"], summary="Queue temizle")
+async def clear_queue():
+    with PROCESS_QUEUE_LOCK:
+        cleared_count = len(PROCESS_QUEUE)
+        PROCESS_QUEUE.clear()
+        PROCESS_QUEUE_EVENT.clear()
+        global PROCESS_QUEUE_STOP_REQUESTED
+        PROCESS_QUEUE_STOP_REQUESTED = True
+        PROCESS_QUEUE_EVENT.set()
+        queue_size = len(PROCESS_QUEUE)
+        global PROCESS_QUEUE_TOTAL_ENQUEUED, PROCESS_QUEUE_COMPLETED, PROCESS_QUEUE_IN_FLIGHT
+        PROCESS_QUEUE_TOTAL_ENQUEUED = 0
+        PROCESS_QUEUE_COMPLETED = 0
+        PROCESS_QUEUE_IN_FLIGHT = 0
+    return QueueClearResponse(
+        success=True,
+        cleared_count=cleared_count,
+        queue_size=queue_size
+    )
 
 
 @app.post("/api/mevzuatgpt/scrape", response_model=ScrapeResponse, tags=["SGK Scraper"], summary="Kurum mevzuat tarama")
