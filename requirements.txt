@@ -21,6 +21,7 @@ playwright>=1.40.0
 
 # Veritabanı
 pymongo>=4.6.0
+redis>=5.0.0
 
 # AI/ML
 openai>=2.6.0

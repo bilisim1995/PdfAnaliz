@@ -23,10 +23,10 @@ import os
 import socket
 from pathlib import Path
 import json
+import redis
 import subprocess
 import platform
 from datetime import datetime
-from collections import deque
 
 # curl_cffi import kontrolü
 try:
@@ -366,26 +366,44 @@ class QueueClearResponse(BaseModel):
     queue_size: int
 
 
-PROCESS_QUEUE = deque()
 PROCESS_QUEUE_LOCK = threading.Lock()
-PROCESS_QUEUE_EVENT = threading.Event()
 PROCESS_QUEUE_SLEEP_SECONDS = 3 * 60
-PROCESS_QUEUE_TOTAL_ENQUEUED = 0
-PROCESS_QUEUE_COMPLETED = 0
-PROCESS_QUEUE_IN_FLIGHT = 0
 PROCESS_QUEUE_WORKER_THREAD = None
 PROCESS_QUEUE_WORKER_RUNNING = False
-PROCESS_QUEUE_STOP_REQUESTED = False
+
+REDIS_CLIENT = None
+REDIS_QUEUE_KEY = os.getenv("REDIS_QUEUE_KEY", "process_queue")
+REDIS_QUEUE_TOTAL_KEY = f"{REDIS_QUEUE_KEY}:total"
+REDIS_QUEUE_COMPLETED_KEY = f"{REDIS_QUEUE_KEY}:completed"
+REDIS_QUEUE_IN_FLIGHT_KEY = f"{REDIS_QUEUE_KEY}:in_flight"
+REDIS_QUEUE_STOP_KEY = f"{REDIS_QUEUE_KEY}:stop_requested"
+
+
+def _get_redis_client() -> redis.Redis:
+    global REDIS_CLIENT
+    if REDIS_CLIENT is not None:
+        return REDIS_CLIENT
+    redis_url = os.getenv("REDIS_URL")
+    if not redis_url:
+        raise RuntimeError("REDIS_URL env bulunamadı")
+    REDIS_CLIENT = redis.Redis.from_url(redis_url, decode_responses=True)
+    return REDIS_CLIENT
+
+
+def _redis_get_int(r: redis.Redis, key: str) -> int:
+    value = r.get(key)
+    try:
+        return int(value) if value is not None else 0
+    except (TypeError, ValueError):
+        return 0
 
 
 def _enqueue_process_item(item: ProcessRequest) -> None:
-    with PROCESS_QUEUE_LOCK:
-        PROCESS_QUEUE.append(item)
-        global PROCESS_QUEUE_TOTAL_ENQUEUED
-        PROCESS_QUEUE_TOTAL_ENQUEUED += 1
-        global PROCESS_QUEUE_STOP_REQUESTED
-        PROCESS_QUEUE_STOP_REQUESTED = False
-        PROCESS_QUEUE_EVENT.set()
+    r = _get_redis_client()
+    payload = item.dict() if hasattr(item, "dict") else item.model_dump()
+    r.rpush(REDIS_QUEUE_KEY, json.dumps(payload, ensure_ascii=False))
+    r.incr(REDIS_QUEUE_TOTAL_KEY)
+    r.set(REDIS_QUEUE_STOP_KEY, "0")
 
 
 def _run_process_item_sync(item: ProcessRequest) -> None:
@@ -398,32 +416,36 @@ def _run_process_item_sync(item: ProcessRequest) -> None:
 def _process_queue_worker() -> None:
     print("🧵 Queue worker başlatıldı")
     while True:
-        PROCESS_QUEUE_EVENT.wait()
-        with PROCESS_QUEUE_LOCK:
-            if PROCESS_QUEUE_STOP_REQUESTED and not PROCESS_QUEUE:
-                PROCESS_QUEUE_EVENT.clear()
-                break
-            if not PROCESS_QUEUE:
-                PROCESS_QUEUE_EVENT.clear()
-                continue
-            item = PROCESS_QUEUE.popleft()
-            global PROCESS_QUEUE_IN_FLIGHT
-            PROCESS_QUEUE_IN_FLIGHT = 1
-            if not PROCESS_QUEUE:
-                PROCESS_QUEUE_EVENT.clear()
+        try:
+            r = _get_redis_client()
+        except Exception as e:
+            print(f"⚠️ Redis bağlantı hatası: {str(e)}")
+            time.sleep(5)
+            continue
+
+        stop_requested = r.get(REDIS_QUEUE_STOP_KEY) == "1"
+        if stop_requested and r.llen(REDIS_QUEUE_KEY) == 0:
+            break
+
+        result = r.blpop(REDIS_QUEUE_KEY, timeout=1)
+        if not result:
+            continue
+
+        _, raw_item = result
+        r.incr(REDIS_QUEUE_IN_FLIGHT_KEY)
         print("🚀 Queue item işleniyor...")
         try:
+            payload = json.loads(raw_item)
+            item = ProcessRequest(**payload)
             _run_process_item_sync(item)
         finally:
-            with PROCESS_QUEUE_LOCK:
-                global PROCESS_QUEUE_COMPLETED
-                PROCESS_QUEUE_COMPLETED += 1
-                PROCESS_QUEUE_IN_FLIGHT = 0
+            r.decr(REDIS_QUEUE_IN_FLIGHT_KEY)
+            r.incr(REDIS_QUEUE_COMPLETED_KEY)
         print(f"⏳ İş tamamlandı, {PROCESS_QUEUE_SLEEP_SECONDS // 60} dk bekleniyor...")
         time.sleep(PROCESS_QUEUE_SLEEP_SECONDS)
-        with PROCESS_QUEUE_LOCK:
-            if PROCESS_QUEUE_STOP_REQUESTED and not PROCESS_QUEUE:
-                break
+        stop_requested = r.get(REDIS_QUEUE_STOP_KEY) == "1"
+        if stop_requested and r.llen(REDIS_QUEUE_KEY) == 0:
+            break
     with PROCESS_QUEUE_LOCK:
         global PROCESS_QUEUE_WORKER_RUNNING
         PROCESS_QUEUE_WORKER_RUNNING = False
@@ -432,10 +454,9 @@ def _process_queue_worker() -> None:
 
 def _ensure_queue_worker_running() -> None:
     with PROCESS_QUEUE_LOCK:
-        global PROCESS_QUEUE_WORKER_RUNNING, PROCESS_QUEUE_WORKER_THREAD, PROCESS_QUEUE_STOP_REQUESTED
+        global PROCESS_QUEUE_WORKER_RUNNING, PROCESS_QUEUE_WORKER_THREAD
         if PROCESS_QUEUE_WORKER_RUNNING:
             return
-        PROCESS_QUEUE_STOP_REQUESTED = False
         PROCESS_QUEUE_WORKER_RUNNING = True
         PROCESS_QUEUE_WORKER_THREAD = threading.Thread(target=_process_queue_worker, daemon=True)
         PROCESS_QUEUE_WORKER_THREAD.start()
@@ -465,8 +486,8 @@ async def enqueue_process_items(req: BulkProcessRequest):
     for item in req.items:
         _enqueue_process_item(item)
     _ensure_queue_worker_running()
-    with PROCESS_QUEUE_LOCK:
-        queue_size = len(PROCESS_QUEUE)
+    r = _get_redis_client()
+    queue_size = r.llen(REDIS_QUEUE_KEY)
     return QueueEnqueueResponse(
         success=True,
         message="İstekler kuyruğa alındı",
@@ -477,25 +498,20 @@ async def enqueue_process_items(req: BulkProcessRequest):
 
 @app.get("/api/kurum/process/queue/status", response_model=QueueStatusResponse, tags=["SGK Scraper"], summary="Queue durumunu getir")
 async def get_queue_status():
-    with PROCESS_QUEUE_LOCK:
-        queue_size = len(PROCESS_QUEUE)
-        items = [
-            {
-                "kurum_id": item.kurum_id,
-                "detsis": item.detsis,
-                "type": item.type,
-                "link": item.link,
-                "mode": item.mode,
-                "category": item.category,
-                "document_name": item.document_name,
-                "use_ocr": item.use_ocr
-            }
-            for item in PROCESS_QUEUE
-        ]
-        total_count = PROCESS_QUEUE_TOTAL_ENQUEUED
-        completed_count = PROCESS_QUEUE_COMPLETED
-        remaining_count = queue_size + PROCESS_QUEUE_IN_FLIGHT
-        instance_id = f"{socket.gethostname()}:{os.getpid()}"
+    r = _get_redis_client()
+    queue_size = r.llen(REDIS_QUEUE_KEY)
+    raw_items = r.lrange(REDIS_QUEUE_KEY, 0, -1)
+    items = []
+    for raw_item in raw_items:
+        try:
+            items.append(json.loads(raw_item))
+        except json.JSONDecodeError:
+            continue
+    total_count = _redis_get_int(r, REDIS_QUEUE_TOTAL_KEY)
+    completed_count = _redis_get_int(r, REDIS_QUEUE_COMPLETED_KEY)
+    in_flight = _redis_get_int(r, REDIS_QUEUE_IN_FLIGHT_KEY)
+    remaining_count = queue_size + in_flight
+    instance_id = f"{socket.gethostname()}:{os.getpid()}"
     return QueueStatusResponse(
         success=True,
         queue_size=queue_size,
@@ -509,18 +525,13 @@ async def get_queue_status():
 
 @app.post("/api/kurum/process/queue/clear", response_model=QueueClearResponse, tags=["SGK Scraper"], summary="Queue temizle")
 async def clear_queue():
-    with PROCESS_QUEUE_LOCK:
-        cleared_count = len(PROCESS_QUEUE)
-        PROCESS_QUEUE.clear()
-        PROCESS_QUEUE_EVENT.clear()
-        global PROCESS_QUEUE_STOP_REQUESTED
-        PROCESS_QUEUE_STOP_REQUESTED = True
-        PROCESS_QUEUE_EVENT.set()
-        queue_size = len(PROCESS_QUEUE)
-        global PROCESS_QUEUE_TOTAL_ENQUEUED, PROCESS_QUEUE_COMPLETED, PROCESS_QUEUE_IN_FLIGHT
-        PROCESS_QUEUE_TOTAL_ENQUEUED = 0
-        PROCESS_QUEUE_COMPLETED = 0
-        PROCESS_QUEUE_IN_FLIGHT = 0
+    r = _get_redis_client()
+    cleared_count = r.llen(REDIS_QUEUE_KEY)
+    r.delete(REDIS_QUEUE_KEY)
+    r.set(REDIS_QUEUE_STOP_KEY, "1")
+    r.set(REDIS_QUEUE_TOTAL_KEY, 0)
+    r.set(REDIS_QUEUE_COMPLETED_KEY, 0)
+    queue_size = 0
     return QueueClearResponse(
         success=True,
         cleared_count=cleared_count,
