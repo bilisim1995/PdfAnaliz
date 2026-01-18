@@ -10,7 +10,7 @@ WorkingDirectory=/opt/pdfanalyzerrag
 Environment="PATH=/opt/pdfanalyzerrag/venv/bin"
 Environment="PYTHONUNBUFFERED=1"
 EnvironmentFile=/opt/pdfanalyzerrag/.env
-ExecStart=/opt/pdfanalyzerrag/venv/bin/uvicorn api_server:app --host 0.0.0.0 --port 8000 --workers 4
+ExecStart=/opt/pdfanalyzerrag/venv/bin/uvicorn api_server:app --host 0.0.0.0 --port 8000 --workers 1
 Restart=always
 RestartSec=10
 StandardOutput=journal
