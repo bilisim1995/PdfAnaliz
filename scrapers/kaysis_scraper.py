@@ -159,13 +159,7 @@ def get_uploaded_documents(api_base_url: str, access_token: str, use_streamlit: 
                     has_more = pagination.get('has_next', False)
                     page += 1
                     
-                    # Güvenlik için maksimum 50 sayfa (5000 belge) çek
-                    if page > 50:
-                        if use_streamlit and STREAMLIT_AVAILABLE:
-                            st.warning("⚠️ Çok fazla belge var. İlk 5000 belge çekildi.")
-                        else:
-                            print("⚠️ Çok fazla belge var. İlk 5000 belge çekildi.")
-                        break
+                    # Limit kaldırıldı: tüm sayfalar çekilir
                 else:
                     has_more = False
             elif response.status_code == 401:

@@ -420,6 +420,14 @@ def _redis_get_int(r: redis.Redis, key: str) -> int:
         return 0
 
 
+def _redis_reset_queue_state(r: redis.Redis) -> None:
+    r.delete(REDIS_QUEUE_KEY)
+    r.set(REDIS_QUEUE_TOTAL_KEY, 0)
+    r.set(REDIS_QUEUE_COMPLETED_KEY, 0)
+    r.set(REDIS_QUEUE_IN_FLIGHT_KEY, 0)
+    r.set(REDIS_QUEUE_STOP_KEY, "0")
+
+
 def _enqueue_process_item(item: ProcessRequest) -> None:
     r = _get_redis_client()
     payload = item.dict() if hasattr(item, "dict") else item.model_dump()
@@ -467,6 +475,10 @@ def _process_queue_worker() -> None:
         time.sleep(PROCESS_QUEUE_SLEEP_SECONDS)
         stop_requested = r.get(REDIS_QUEUE_STOP_KEY) == "1"
         if stop_requested and r.llen(REDIS_QUEUE_KEY) == 0:
+            _redis_reset_queue_state(r)
+            break
+        if not stop_requested and r.llen(REDIS_QUEUE_KEY) == 0 and _redis_get_int(r, REDIS_QUEUE_IN_FLIGHT_KEY) == 0:
+            _redis_reset_queue_state(r)
             break
     with PROCESS_QUEUE_LOCK:
         global PROCESS_QUEUE_WORKER_RUNNING
@@ -544,10 +556,8 @@ async def get_queue_status():
 async def clear_queue():
     r = _get_redis_client()
     cleared_count = r.llen(REDIS_QUEUE_KEY)
-    r.delete(REDIS_QUEUE_KEY)
     r.set(REDIS_QUEUE_STOP_KEY, "1")
-    r.set(REDIS_QUEUE_TOTAL_KEY, 0)
-    r.set(REDIS_QUEUE_COMPLETED_KEY, 0)
+    _redis_reset_queue_state(r)
     queue_size = 0
     return QueueClearResponse(
         success=True,
