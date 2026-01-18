@@ -402,7 +402,17 @@ def _get_redis_client() -> redis.Redis:
     redis_url = os.getenv("REDIS_URL")
     if not redis_url:
         raise RuntimeError("REDIS_URL env bulunamadı")
-    REDIS_CLIENT = redis.Redis.from_url(redis_url, decode_responses=True)
+    ssl_cert_reqs_env = os.getenv("REDIS_SSL_CERT_REQS", "").strip().lower()
+    ssl_cert_reqs = None
+    if ssl_cert_reqs_env in ["none", "false", "0", "disable", "disabled"]:
+        ssl_cert_reqs = None
+    elif ssl_cert_reqs_env in ["required", "true", "1"]:
+        ssl_cert_reqs = "required"
+    REDIS_CLIENT = redis.Redis.from_url(
+        redis_url,
+        decode_responses=True,
+        ssl_cert_reqs=ssl_cert_reqs
+    )
     return REDIS_CLIENT
 
 
