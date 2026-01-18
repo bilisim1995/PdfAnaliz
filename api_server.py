@@ -2123,21 +2123,16 @@ async def list_metadata(limit: int = 100, offset: int = 0):
         client, metadata_col, content_col = _get_mongo_collections()
         if not client:
             raise HTTPException(status_code=500, detail="MongoDB bağlantısı kurulamadı")
-        # Güvenli limit aralığı
-        if limit <= 0:
-            limit = 100
-        if limit > 1000:
-            limit = 1000
         if offset < 0:
             offset = 0
         total = metadata_col.count_documents({})
-        cursor = metadata_col.find({}).skip(offset).limit(limit).sort("olusturulma_tarihi", -1)
+        cursor = metadata_col.find({}).skip(offset).sort("olusturulma_tarihi", -1)
         items = []
         for doc in cursor:
             doc["_id"] = str(doc["_id"])
             items.append(doc)
         client.close()
-        return {"success": True, "total": total, "limit": limit, "offset": offset, "data": items}
+        return {"success": True, "total": total, "limit": None, "offset": offset, "data": items}
     except HTTPException:
         raise
     except Exception as e:
