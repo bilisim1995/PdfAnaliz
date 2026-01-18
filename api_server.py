@@ -21,6 +21,8 @@ import time
 import re
 import os
 import socket
+import warnings
+from contextlib import asynccontextmanager
 from pathlib import Path
 import json
 import redis
@@ -54,6 +56,13 @@ from urllib.parse import urlparse, urljoin
 
 # .env dosyasını yükle
 load_dotenv()
+
+# urllib3/LibreSSL uyarısını bastır (runtime davranışını değiştirmez)
+try:
+    from urllib3.exceptions import NotOpenSSLWarning
+    warnings.filterwarnings("ignore", category=NotOpenSSLWarning)
+except Exception:
+    pass
 
 # Stdout'u line-buffered yap (anlık log görünümü için)
 import sys
@@ -112,12 +121,19 @@ openapi_tags = [
     }
 ]
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _ensure_queue_worker_running()
+    yield
+
+
 app = FastAPI(
     title="SGK Scraper API",
     version="1.0.0",
     description="SGK ve e-Devlet entegrasyonları için REST API",
     redoc_url=None,
-    openapi_tags=openapi_tags
+    openapi_tags=openapi_tags,
+    lifespan=lifespan
 )
 
 # CORS middleware ekle - Tüm origin'lere izin ver
@@ -474,11 +490,6 @@ async def root():
             "POST /api/mevzuatgpt/generate-json": "Sadece tarama yapar ve JSON oluşturur (karşılaştırma yapmaz)"
         }
     }
-
-
-@app.on_event("startup")
-async def start_queue_worker() -> None:
-    _ensure_queue_worker_running()
 
 
 @app.post("/api/kurum/process/queue", response_model=QueueEnqueueResponse, tags=["SGK Scraper"], summary="Process isteklerini kuyruğa al")
