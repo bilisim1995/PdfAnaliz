@@ -185,6 +185,103 @@ async def html_to_pdf(url: str) -> str:
     return temp_path
 
 
+async def html_content_to_pdf(html_content: str, base_url: Optional[str] = None) -> str:
+    """HTML içeriğini PDF'ye çevirir (playwright async API kullanarak)."""
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        raise Exception("Playwright kurulu değil. Lütfen 'pip install playwright' ve 'playwright install chromium' komutlarını çalıştırın.")
+
+    if not html_content or not html_content.strip():
+        raise ValueError("HTML içeriği boş")
+
+    temp_dir = tempfile.gettempdir()
+    filename = f"html_content_to_pdf_{uuid.uuid4().hex[:8]}.pdf"
+    temp_path = os.path.join(temp_dir, filename)
+
+    # PDF görüntüleme/açma işlemlerinde proxy kullanılıyor
+    proxies = get_proxy_from_db()
+    playwright_proxy = None
+    if proxies:
+        http_proxy = proxies.get('http', '').replace('http://', '')
+        if http_proxy:
+            if '@' in http_proxy:
+                auth, host_port = http_proxy.split('@', 1)
+                if ':' in auth:
+                    username, password = auth.split(':', 1)
+                else:
+                    username, password = auth, ''
+                if ':' in host_port:
+                    host, port = host_port.split(':', 1)
+                else:
+                    host, port = host_port, '8080'
+                playwright_proxy = {
+                    "server": f"http://{host}:{port}",
+                    "username": username if username else None,
+                    "password": password if password else None
+                }
+            else:
+                if ':' in http_proxy:
+                    host, port = http_proxy.split(':', 1)
+                else:
+                    host, port = http_proxy, '8080'
+                playwright_proxy = {
+                    "server": f"http://{host}:{port}"
+                }
+        if playwright_proxy:
+            print("🔐 HTML içerik PDF dönüşümünde proxy kullanılıyor...")
+    else:
+        print("⚠️ Proxy bulunamadı, direkt bağlantı deneniyor...")
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+
+        if playwright_proxy:
+            context = await browser.new_context(proxy=playwright_proxy)
+        else:
+            context = await browser.new_context()
+
+        page = await context.new_page()
+        await page.set_viewport_size({"width": 1920, "height": 1080})
+
+        try:
+            print("⏳ HTML içerik yükleniyor...")
+            await page.set_content(html_content, wait_until="networkidle", base_url=base_url)
+            await page.wait_for_timeout(1000)
+            await page.wait_for_load_state("domcontentloaded")
+            await page.wait_for_load_state("networkidle")
+
+            print("📄 PDF'ye dönüştürülüyor...")
+            await page.pdf(
+                path=temp_path,
+                format="A4",
+                print_background=True,
+                margin={"top": "15mm", "right": "15mm", "bottom": "15mm", "left": "15mm"},
+                prefer_css_page_size=False
+            )
+
+            print("✅ PDF oluşturuldu")
+        except Exception as e:
+            await context.close()
+            await browser.close()
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise Exception(f"HTML içerik PDF'ye dönüştürülürken hata: {str(e)}")
+
+        await context.close()
+        await browser.close()
+
+    if not os.path.exists(temp_path):
+        raise ValueError("PDF dosyası oluşturulamadı")
+
+    file_size = os.path.getsize(temp_path)
+    if file_size < 1024:
+        os.remove(temp_path)
+        raise ValueError("PDF dosyası çok küçük, muhtemelen dönüşüm hatası")
+
+    return temp_path
+
+
 async def download_pdf_from_url(url: str, max_retries: int = 3) -> str:
     """URL'den PDF indirir veya HTML sayfasını PDF'ye çevirir (async)"""
     last_error = None

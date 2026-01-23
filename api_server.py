@@ -15,6 +15,11 @@ from scrapers.kaysis_scraper import (
     turkish_sentence_case,
     is_title_similar
 )
+from scrapers.yargitay_scraper import (
+    fetch_yargitay_list,
+    fetch_yargitay_document_html,
+    convert_html_to_pdf
+)
 import threading
 import asyncio
 import time
@@ -365,6 +370,19 @@ class BulkProcessRequest(BaseModel):
     items: List[ProcessRequest] = Field(..., description="Sırayla işlenecek process istekleri listesi")
 
 
+class YargitayUploadRequest(BaseModel):
+    page: int = Field(..., description="Yargıtay arama sayfa numarası")
+
+
+class YargitayQueueItem(BaseModel):
+    type: str = Field(default="yargitay", description="Scraper tipi (yargitay)")
+    id: str = Field(..., description="Yargıtay karar ID")
+    daire: str = Field(..., description="Daire adı")
+    esasNo: str = Field(..., description="Esas numarası")
+    kararNo: str = Field(..., description="Karar numarası")
+    kararTarihi: str = Field(..., description="Karar tarihi")
+
+
 class QueueEnqueueResponse(BaseModel):
     success: bool
     message: str
@@ -428,12 +446,16 @@ def _redis_reset_queue_state(r: redis.Redis) -> None:
     r.set(REDIS_QUEUE_STOP_KEY, "0")
 
 
-def _enqueue_process_item(item: ProcessRequest) -> None:
+def _enqueue_queue_payload(payload: Dict[str, Any]) -> None:
     r = _get_redis_client()
-    payload = item.dict() if hasattr(item, "dict") else item.model_dump()
     r.rpush(REDIS_QUEUE_KEY, json.dumps(payload, ensure_ascii=False))
     r.incr(REDIS_QUEUE_TOTAL_KEY)
     r.set(REDIS_QUEUE_STOP_KEY, "0")
+
+
+def _enqueue_process_item(item: ProcessRequest) -> None:
+    payload = item.dict() if hasattr(item, "dict") else item.model_dump()
+    _enqueue_queue_payload(payload)
 
 
 def _run_process_item_sync(item: ProcessRequest) -> None:
@@ -441,6 +463,13 @@ def _run_process_item_sync(item: ProcessRequest) -> None:
         asyncio.run(process_item(item))
     except Exception as e:
         print(f"⚠️ Queue işlenirken hata: {str(e)}")
+
+
+def _run_yargitay_item_sync(item: YargitayQueueItem) -> None:
+    try:
+        asyncio.run(process_yargitay_item(item))
+    except Exception as e:
+        print(f"⚠️ Yargıtay queue işlenirken hata: {str(e)}")
 
 
 def _process_queue_worker() -> None:
@@ -466,8 +495,13 @@ def _process_queue_worker() -> None:
         print("🚀 Queue item işleniyor...")
         try:
             payload = json.loads(raw_item)
-            item = ProcessRequest(**payload)
-            _run_process_item_sync(item)
+            item_type = (payload.get("type") or "kaysis").lower()
+            if item_type == "yargitay":
+                item = YargitayQueueItem(**payload)
+                _run_yargitay_item_sync(item)
+            else:
+                item = ProcessRequest(**payload)
+                _run_process_item_sync(item)
         finally:
             r.decr(REDIS_QUEUE_IN_FLIGHT_KEY)
             r.incr(REDIS_QUEUE_COMPLETED_KEY)
@@ -521,6 +555,35 @@ async def enqueue_process_items(req: BulkProcessRequest):
         success=True,
         message="İstekler kuyruğa alındı",
         enqueued_count=len(req.items),
+        queue_size=queue_size
+    )
+
+
+@app.post("/api/yargitay-upload", response_model=QueueEnqueueResponse, tags=["Yargıtay"], summary="Yargıtay kararlarını kuyruğa al")
+async def enqueue_yargitay_items(req: YargitayUploadRequest):
+    items = fetch_yargitay_list(req.page)
+    enqueued_count = 0
+    for item in items:
+        payload = {
+            "type": "yargitay",
+            "id": str(item.get("id", "")).strip(),
+            "daire": str(item.get("daire", "")).strip(),
+            "esasNo": str(item.get("esasNo", "")).strip(),
+            "kararNo": str(item.get("kararNo", "")).strip(),
+            "kararTarihi": str(item.get("kararTarihi", "")).strip()
+        }
+        if not payload["id"]:
+            continue
+        _enqueue_queue_payload(payload)
+        enqueued_count += 1
+
+    _ensure_queue_worker_running()
+    r = _get_redis_client()
+    queue_size = r.llen(REDIS_QUEUE_KEY)
+    return QueueEnqueueResponse(
+        success=True,
+        message="Yargıtay istekleri kuyruğa alındı",
+        enqueued_count=enqueued_count,
         queue_size=queue_size
     )
 
@@ -3609,7 +3672,7 @@ def _create_url_slug(text: str) -> str:
     return slug or "pdf_document"
 
 
-def _upload_to_bunny(pdf_path: str, filename: str) -> Optional[str]:
+def _upload_to_bunny(pdf_path: str, filename: str, storage_folder_override: Optional[str] = None) -> Optional[str]:
     """PDF'i Bunny.net'e yükler ve public URL döner"""
     try:
         print(f"📤 [Bunny.net Upload] Başlatılıyor...")
@@ -3620,7 +3683,7 @@ def _upload_to_bunny(pdf_path: str, filename: str) -> Optional[str]:
         storage_zone = os.getenv("BUNNY_STORAGE_ZONE", "mevzuatgpt")
         storage_region = os.getenv("BUNNY_STORAGE_REGION", "storage.bunnycdn.com")
         storage_endpoint = os.getenv("BUNNY_STORAGE_ENDPOINT", "https://cdn.mevzuatgpt.org")
-        storage_folder = os.getenv("BUNNY_STORAGE_FOLDER", "portal")
+        storage_folder = storage_folder_override or os.getenv("BUNNY_STORAGE_FOLDER", "portal")
         
         print(f"   🌐 Storage Zone: {storage_zone}")
         print(f"   🌐 Storage Region: {storage_region}")
@@ -4631,6 +4694,161 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
         import traceback
         print(f"   📋 Traceback: {traceback.format_exc()}")
         return {"error": str(e)}
+
+
+def _upload_yargitay_bulk(
+    cfg: Dict[str, Any],
+    token: str,
+    pdf_path: str,
+    belge_adi: str,
+    daire: str,
+    esas_no: str,
+    karar_no: str,
+    karar_tarihi: str,
+    stats: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Yargıtay kararını tek PDF olarak bulk-upload-yargitay endpoint'ine gönderir."""
+    try:
+        api_base_url = cfg.get("api_base_url")
+        if not api_base_url:
+            print("❌ [Yargıtay Upload] API base URL bulunamadı!")
+            return None
+
+        upload_url = f"{api_base_url.rstrip('/')}/api/admin/documents/bulk-upload-yargitay"
+        print(f"🌐 [Yargıtay Upload] Upload URL: {upload_url}")
+
+        headers = {"Authorization": f"Bearer {token}"}
+        form_data = {
+            "category": "Karar",
+            "institution": "Yargıtay Başkanlığı",
+            "belge_adi": belge_adi,
+            "daire": daire,
+            "esasNo": esas_no,
+            "kararNo": karar_no,
+            "kararTarihi": karar_tarihi,
+            "stats": json.dumps(stats, ensure_ascii=False)
+        }
+
+        with open(pdf_path, "rb") as f:
+            file_content = f.read()
+
+        if CURL_CFFI_AVAILABLE:
+            multipart = CurlMime()
+            multipart.addpart(name="file", filename=Path(pdf_path).name, data=file_content, mimetype="application/pdf")
+            for key, value in form_data.items():
+                multipart.addpart(name=key, data=str(value))
+            resp = requests.post(upload_url, headers=headers, multipart=multipart, timeout=1200)
+        else:
+            files = {"file": (Path(pdf_path).name, file_content, "application/pdf")}
+            resp = requests.post(upload_url, headers=headers, data=form_data, files=files, timeout=1200)
+
+        print(f"📡 [Yargıtay Upload] API yanıtı alındı")
+        print(f"   📊 Status Code: {resp.status_code}")
+
+        if resp.status_code == 200:
+            try:
+                return resp.json()
+            except json.JSONDecodeError:
+                return {"status_code": 200, "text": resp.text}
+
+        return {"status_code": resp.status_code, "text": resp.text}
+    except requests.exceptions.Timeout as e:
+        print(f"❌ [Yargıtay Upload] Timeout hatası: {str(e)}")
+        return {"error": f"Timeout: {str(e)}"}
+    except requests.exceptions.RequestException as e:
+        print(f"❌ [Yargıtay Upload] Request hatası: {str(e)}")
+        return {"error": f"Request error: {str(e)}"}
+    except Exception as e:
+        print(f"❌ [Yargıtay Upload] Beklenmeyen hata: {str(e)}")
+        import traceback
+        print(f"   📋 Traceback: {traceback.format_exc()}")
+        return {"error": str(e)}
+
+
+async def process_yargitay_item(item: YargitayQueueItem) -> Dict[str, Any]:
+    belge_adi = (
+        "Yargıtay Başkanlığı - "
+        f"Daire: {item.daire} - "
+        f"Esas No: {item.esasNo} - "
+        f"Karar No: {item.kararNo} - "
+        f"Karar Tarihi: {item.kararTarihi}"
+    )
+
+    exists_in_mevzuatgpt, exists_in_portal, error_msg = _check_document_name_exists(belge_adi, "t")
+    if exists_in_mevzuatgpt or exists_in_portal:
+        return {
+            "success": False,
+            "message": error_msg or "Belge adı daha önce yüklenmiş",
+            "data": {
+                "belge_adi": belge_adi,
+                "exists_in_mevzuatgpt": exists_in_mevzuatgpt,
+                "exists_in_portal": exists_in_portal
+            }
+        }
+
+    html_content = fetch_yargitay_document_html(item.id)
+    if not html_content:
+        return {"success": False, "message": "Yargıtay HTML içeriği alınamadı"}
+
+    pdf_path = await convert_html_to_pdf(html_content)
+    try:
+        file_size_bytes = os.path.getsize(pdf_path)
+        file_size_mb = round(file_size_bytes / (1024 * 1024), 2)
+        processor = PDFProcessor()
+        pdf_structure = processor.analyze_pdf_structure(pdf_path)
+        page_count = pdf_structure.get("total_pages", 0)
+
+        stats = {
+            "page_count": page_count,
+            "file_size_bytes": file_size_bytes,
+            "file_size_mb": file_size_mb
+        }
+
+        transliterated_name = _transliterate_turkish(belge_adi)
+        safe_pdf_adi = re.sub(r'[^a-zA-Z0-9\s-]', '', transliterated_name).strip()
+        safe_pdf_adi = re.sub(r'\s+', '_', safe_pdf_adi)
+        safe_pdf_adi = re.sub(r'_+', '_', safe_pdf_adi)
+        bunny_filename = f"{safe_pdf_adi}_{ObjectId()}.pdf"
+
+        pdf_url = _upload_to_bunny(pdf_path, bunny_filename, storage_folder_override="yargitay")
+        if not pdf_url:
+            print("⚠️ Bunny.net yükleme başarısız, upload işlemi devam edecek")
+
+        cfg = _load_config()
+        if not cfg:
+            return {"success": False, "message": "Config dosyası bulunamadı"}
+        token = _login_with_config(cfg)
+        if not token:
+            return {"success": False, "message": "MevzuatGPT login başarısız"}
+
+        upload_resp = _upload_yargitay_bulk(
+            cfg=cfg,
+            token=token,
+            pdf_path=pdf_path,
+            belge_adi=belge_adi,
+            daire=item.daire,
+            esas_no=item.esasNo,
+            karar_no=item.kararNo,
+            karar_tarihi=item.kararTarihi,
+            stats=stats
+        )
+
+        return {
+            "success": True,
+            "message": "Yargıtay kararı işlendi",
+            "data": {
+                "belge_adi": belge_adi,
+                "bunny_pdf_url": pdf_url,
+                "stats": stats,
+                "upload_response": upload_resp
+            }
+        }
+    finally:
+        try:
+            if os.path.exists(pdf_path):
+                os.remove(pdf_path)
+        except Exception:
+            pass
 
 
 @app.post("/api/kurum/process", response_model=ProcessResponse, tags=["SGK Scraper"], summary="Link ile PDF indir, analiz et ve yükle")
