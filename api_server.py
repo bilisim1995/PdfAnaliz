@@ -5046,22 +5046,22 @@ async def process_yargitay_item(item: YargitayQueueItem) -> Dict[str, Any]:
         safe_pdf_adi = re.sub(r'_+', '_', safe_pdf_adi)
         bunny_filename = f"{safe_pdf_adi}_{ObjectId()}.pdf"
 
-    pdf_url = None
-    if exists_in_portal:
-        if portal_pdf_url:
-            pdf_url = portal_pdf_url
-            print("ℹ️ Portal'da mevcut PDF URL kullanılıyor, Bunny upload atlandı.")
-        else:
-            _log_yargitay_failure(item, "portal_pdf_url", "Portal kaydında pdf_url bulunamadı")
-            return {"success": False, "message": "Portal kaydında pdf_url bulunamadı"}
-    else:
-        pdf_url = _upload_to_bunny(pdf_path, bunny_filename, storage_folder_override="yargitay")
-        if not pdf_url:
-            _log_yargitay_failure(item, "bunny_upload", "Bunny.net yükleme başarısız")
-            print("⚠️ Bunny.net yükleme başarısız, upload işlemi devam edecek")
-
         url_slug = _create_url_slug(belge_adi)
         etiketler = f"E:{item.esasNo}-K:{item.kararNo}"
+
+        pdf_url = None
+        if exists_in_portal:
+            if portal_pdf_url:
+                pdf_url = portal_pdf_url
+                print("ℹ️ Portal'da mevcut PDF URL kullanılıyor, Bunny upload atlandı.")
+            else:
+                _log_yargitay_failure(item, "portal_pdf_url", "Portal kaydında pdf_url bulunamadı")
+                return {"success": False, "message": "Portal kaydında pdf_url bulunamadı"}
+        else:
+            pdf_url = _upload_to_bunny(pdf_path, bunny_filename, storage_folder_override="yargitay")
+            if not pdf_url:
+                _log_yargitay_failure(item, "bunny_upload", "Bunny.net yükleme başarısız")
+                print("⚠️ Bunny.net yükleme başarısız, upload işlemi devam edecek")
 
         cfg = _load_config()
         if not cfg:
