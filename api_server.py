@@ -4043,10 +4043,11 @@ def _check_document_name_exists(belge_adi: str, mode: str) -> Tuple[bool, bool, 
         return False, False, None
 
 
-def _check_yargitay_exists(esas_no: str, karar_no: str) -> Tuple[bool, bool, Optional[str]]:
+def _check_yargitay_exists(esas_no: str, karar_no: str) -> Tuple[bool, bool, Optional[str], Optional[str]]:
     """Yargıtay için esasNo + kararNo eşitliğine göre MevzuatGPT ve Portal kontrolü yapar."""
     exists_in_mevzuatgpt = False
     exists_in_portal = False
+    portal_pdf_url = None
 
     try:
         print("=" * 80)
@@ -4098,9 +4099,8 @@ def _check_yargitay_exists(esas_no: str, karar_no: str) -> Tuple[bool, bool, Opt
         client = _get_mongodb_client()
         if client:
             database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
-            metadata_collection_name = os.getenv("MONGODB_METADATA_COLLECTION", "metadata")
             db = client[database_name]
-            metadata_collection = db[metadata_collection_name]
+            yargitay_collection = db["yargitay"]
 
             query = {
                 "$or": [
@@ -4109,19 +4109,21 @@ def _check_yargitay_exists(esas_no: str, karar_no: str) -> Tuple[bool, bool, Opt
                     {"esas": esas_no, "karar": karar_no}
                 ]
             }
-            if metadata_collection.find_one(query):
+            doc = yargitay_collection.find_one(query)
+            if doc:
                 exists_in_portal = True
+                portal_pdf_url = doc.get("pdf_url") or doc.get("pdfUrl")
                 print("   ✅ Portal'da eşleşme bulundu")
             else:
                 print("   ❌ Portal'da eşleşme bulunamadı")
             client.close()
 
-        return exists_in_mevzuatgpt, exists_in_portal, None
+        return exists_in_mevzuatgpt, exists_in_portal, None, portal_pdf_url
     except Exception as e:
         print(f"❌ Yargıtay kontrolü sırasında hata: {str(e)}")
         import traceback
         print(f"   📋 Traceback: {traceback.format_exc()}")
-        return False, False, f"Kontrol sırasında hata: {str(e)}"
+        return False, False, f"Kontrol sırasında hata: {str(e)}", None
 
 
 def _save_to_mongodb(metadata: Dict[str, Any], content: str) -> Optional[str]:
@@ -4986,7 +4988,7 @@ async def process_yargitay_item(item: YargitayQueueItem) -> Dict[str, Any]:
         f"Karar Tarihi: {item.kararTarihi}"
     )
 
-    exists_in_mevzuatgpt, exists_in_portal, error_msg = _check_yargitay_exists(item.esasNo, item.kararNo)
+    exists_in_mevzuatgpt, exists_in_portal, error_msg, portal_pdf_url = _check_yargitay_exists(item.esasNo, item.kararNo)
     if error_msg:
         _log_yargitay_failure(item, "check_exists", error_msg)
     # Mode belirle: p (sadece Portal), m (sadece MevzuatGPT), t (ikisi de yok)
@@ -5044,6 +5046,15 @@ async def process_yargitay_item(item: YargitayQueueItem) -> Dict[str, Any]:
         safe_pdf_adi = re.sub(r'_+', '_', safe_pdf_adi)
         bunny_filename = f"{safe_pdf_adi}_{ObjectId()}.pdf"
 
+    pdf_url = None
+    if exists_in_portal:
+        if portal_pdf_url:
+            pdf_url = portal_pdf_url
+            print("ℹ️ Portal'da mevcut PDF URL kullanılıyor, Bunny upload atlandı.")
+        else:
+            _log_yargitay_failure(item, "portal_pdf_url", "Portal kaydında pdf_url bulunamadı")
+            return {"success": False, "message": "Portal kaydında pdf_url bulunamadı"}
+    else:
         pdf_url = _upload_to_bunny(pdf_path, bunny_filename, storage_folder_override="yargitay")
         if not pdf_url:
             _log_yargitay_failure(item, "bunny_upload", "Bunny.net yükleme başarısız")
