@@ -372,11 +372,22 @@ class BulkProcessRequest(BaseModel):
 
 class YargitayUploadRequest(BaseModel):
     page: int = Field(..., description="Yargıtay arama sayfa numarası")
+    kurum_id: str = Field(..., description="Kurum MongoDB ObjectId (Yargıtay)")
 
 
 class YargitayQueueItem(BaseModel):
     type: str = Field(default="yargitay", description="Scraper tipi (yargitay)")
     id: str = Field(..., description="Yargıtay karar ID")
+    kurum_id: str = Field(..., description="Kurum MongoDB ObjectId (Yargıtay)")
+    daire: str = Field(..., description="Daire adı")
+    esasNo: str = Field(..., description="Esas numarası")
+    kararNo: str = Field(..., description="Karar numarası")
+    kararTarihi: str = Field(..., description="Karar tarihi")
+
+
+class YargitayBulkUploadRequest(BaseModel):
+    id: str = Field(..., description="Yargıtay karar ID")
+    kurum_id: str = Field(..., description="Kurum MongoDB ObjectId (Yargıtay)")
     daire: str = Field(..., description="Daire adı")
     esasNo: str = Field(..., description="Esas numarası")
     kararNo: str = Field(..., description="Karar numarası")
@@ -410,6 +421,8 @@ PROCESS_QUEUE_LOCK = threading.Lock()
 PROCESS_QUEUE_SLEEP_SECONDS = 3 * 60
 PROCESS_QUEUE_WORKER_THREAD = None
 PROCESS_QUEUE_WORKER_RUNNING = False
+
+YARGITAY_FAILURES_PATH = os.path.join(os.getcwd(), "yargitay_failures.json")
 
 REDIS_CLIENT = None
 REDIS_QUEUE_KEY = os.getenv("REDIS_QUEUE_KEY", "process_queue")
@@ -492,7 +505,8 @@ def _process_queue_worker() -> None:
 
         _, raw_item = result
         r.incr(REDIS_QUEUE_IN_FLIGHT_KEY)
-        print("🚀 Queue item işleniyor...")
+        current_completed = _redis_get_int(r, REDIS_QUEUE_COMPLETED_KEY)
+        print(f"🚀 Queue item işleniyor... Sıra: {current_completed + 1}")
         try:
             payload = json.loads(raw_item)
             item_type = (payload.get("type") or "kaysis").lower()
@@ -505,8 +519,12 @@ def _process_queue_worker() -> None:
         finally:
             r.decr(REDIS_QUEUE_IN_FLIGHT_KEY)
             r.incr(REDIS_QUEUE_COMPLETED_KEY)
-        print(f"⏳ İş tamamlandı, {PROCESS_QUEUE_SLEEP_SECONDS // 60} dk bekleniyor...")
-        time.sleep(PROCESS_QUEUE_SLEEP_SECONDS)
+        if item_type == "yargitay":
+            print("⏳ İş tamamlandı, 10 sn bekleniyor...")
+            time.sleep(10)
+        else:
+            print(f"⏳ İş tamamlandı, {PROCESS_QUEUE_SLEEP_SECONDS // 60} dk bekleniyor...")
+            time.sleep(PROCESS_QUEUE_SLEEP_SECONDS)
         stop_requested = r.get(REDIS_QUEUE_STOP_KEY) == "1"
         if stop_requested and r.llen(REDIS_QUEUE_KEY) == 0:
             _redis_reset_queue_state(r)
@@ -567,6 +585,7 @@ async def enqueue_yargitay_items(req: YargitayUploadRequest):
         payload = {
             "type": "yargitay",
             "id": str(item.get("id", "")).strip(),
+            "kurum_id": req.kurum_id,
             "daire": str(item.get("daire", "")).strip(),
             "esasNo": str(item.get("esasNo", "")).strip(),
             "kararNo": str(item.get("kararNo", "")).strip(),
@@ -586,6 +605,19 @@ async def enqueue_yargitay_items(req: YargitayUploadRequest):
         enqueued_count=enqueued_count,
         queue_size=queue_size
     )
+
+
+@app.post("/api/bulk-upload-yargitay", tags=["Yargıtay"], summary="Yargıtay kararını işleyip yükle")
+async def bulk_upload_yargitay(req: YargitayBulkUploadRequest):
+    item = YargitayQueueItem(
+        id=req.id,
+        kurum_id=req.kurum_id,
+        daire=req.daire,
+        esasNo=req.esasNo,
+        kararNo=req.kararNo,
+        kararTarihi=req.kararTarihi
+    )
+    return await process_yargitay_item(item)
 
 
 @app.get("/api/kurum/process/queue/status", response_model=QueueStatusResponse, tags=["SGK Scraper"], summary="Queue durumunu getir")
@@ -4011,6 +4043,87 @@ def _check_document_name_exists(belge_adi: str, mode: str) -> Tuple[bool, bool, 
         return False, False, None
 
 
+def _check_yargitay_exists(esas_no: str, karar_no: str) -> Tuple[bool, bool, Optional[str]]:
+    """Yargıtay için esasNo + kararNo eşitliğine göre MevzuatGPT ve Portal kontrolü yapar."""
+    exists_in_mevzuatgpt = False
+    exists_in_portal = False
+
+    try:
+        print("=" * 80)
+        print("🔍 YARGITAY KONTROLÜ (ESAS/KARAR)")
+        print("=" * 80)
+        print(f"   📄 Esas No: {esas_no}")
+        print(f"   📄 Karar No: {karar_no}")
+
+        normalized_esas = normalize_for_exact_match(esas_no)
+        normalized_karar = normalize_for_exact_match(karar_no)
+
+        print("\n   📡 [1/2] MevzuatGPT kontrolü yapılıyor...")
+        cfg = _load_config()
+        if cfg:
+            token = _login_with_config(cfg)
+            if token:
+                api_base_url = cfg.get("api_base_url")
+                query_url = (
+                    f"{api_base_url.rstrip('/')}/api/admin/documents"
+                    f"?esasNo={urllib.parse.quote(esas_no)}&kararNo={urllib.parse.quote(karar_no)}"
+                )
+                print(f"   🌐 Query URL: {query_url}")
+                headers = {"Authorization": f"Bearer {token}"}
+                resp = requests.get(query_url, headers=headers, timeout=60)
+                if resp.status_code == 200:
+                    try:
+                        data = resp.json()
+                        if isinstance(data, dict):
+                            items = data.get("data") or data.get("items") or data.get("documents") or []
+                        elif isinstance(data, list):
+                            items = data
+                        else:
+                            items = []
+                        if items:
+                            exists_in_mevzuatgpt = True
+                            print("   ✅ MevzuatGPT'de eşleşme bulundu")
+                        else:
+                            print("   ❌ MevzuatGPT'de eşleşme bulunamadı")
+                    except json.JSONDecodeError:
+                        print("   ⚠️ MevzuatGPT cevabı JSON değil")
+                else:
+                    print(f"   ⚠️ MevzuatGPT sorgusu başarısız: HTTP {resp.status_code}")
+            else:
+                print("   ⚠️ MevzuatGPT login başarısız, kontrol atlandı")
+        else:
+            print("   ⚠️ Config bulunamadı, MevzuatGPT kontrolü atlandı")
+
+        print("\n   🗄️ [2/2] Portal (MongoDB) kontrolü yapılıyor...")
+        client = _get_mongodb_client()
+        if client:
+            database_name = os.getenv("MONGODB_DATABASE", "mevzuatgpt")
+            metadata_collection_name = os.getenv("MONGODB_METADATA_COLLECTION", "metadata")
+            db = client[database_name]
+            metadata_collection = db[metadata_collection_name]
+
+            query = {
+                "$or": [
+                    {"esasNo": esas_no, "kararNo": karar_no},
+                    {"esas_no": esas_no, "karar_no": karar_no},
+                    {"esas": esas_no, "karar": karar_no}
+                ]
+            }
+            if metadata_collection.find_one(query):
+                exists_in_portal = True
+                print("   ✅ Portal'da eşleşme bulundu")
+            else:
+                print("   ❌ Portal'da eşleşme bulunamadı")
+            client.close()
+
+        return exists_in_mevzuatgpt, exists_in_portal, None
+    except Exception as e:
+        print(f"❌ Yargıtay kontrolü sırasında hata: {str(e)}")
+        import traceback
+        print(f"   📋 Traceback: {traceback.format_exc()}")
+        return False, False, f"Kontrol sırasında hata: {str(e)}"
+
+
 def _save_to_mongodb(metadata: Dict[str, Any], content: str) -> Optional[str]:
     """Metadata ve content'i MongoDB'ye kaydeder, metadata_id döner"""
     try:
@@ -4699,13 +4812,21 @@ def _upload_bulk(cfg: Dict[str, Any], token: str, output_dir: str, category: str
 def _upload_yargitay_bulk(
     cfg: Dict[str, Any],
     token: str,
-    pdf_path: str,
+    pdf_url: str,
     belge_adi: str,
     daire: str,
     esas_no: str,
     karar_no: str,
     karar_tarihi: str,
-    stats: Dict[str, Any]
+    stats: Dict[str, Any],
+    url_slug: str,
+    etiketler: str,
+    icerik: str,
+    icerik_text: str,
+    kurum_id: str,
+    mode: str,
+    sayfa_sayisi: int,
+    dosya_boyutu_mb: float
 ) -> Optional[Dict[str, Any]]:
     """Yargıtay kararını tek PDF olarak bulk-upload-yargitay endpoint'ine gönderir."""
     try:
@@ -4719,6 +4840,7 @@ def _upload_yargitay_bulk(
 
         headers = {"Authorization": f"Bearer {token}"}
         form_data = {
+            "kurum_id": kurum_id,
             "category": "Karar",
             "institution": "Yargıtay Başkanlığı",
             "belge_adi": belge_adi,
@@ -4726,21 +4848,26 @@ def _upload_yargitay_bulk(
             "esasNo": esas_no,
             "kararNo": karar_no,
             "kararTarihi": karar_tarihi,
-            "stats": json.dumps(stats, ensure_ascii=False)
+            "etiketler": etiketler,
+            "pdf_url": pdf_url,
+            "url_slug": url_slug,
+            "icerik": icerik,
+            "icerik_text": icerik_text,
+            "mode": mode,
+            "sayfa_sayisi": str(sayfa_sayisi),
+            "dosya_boyutu_mb": str(dosya_boyutu_mb)
         }
 
-        with open(pdf_path, "rb") as f:
-            file_content = f.read()
+        print("📤 [Yargıtay Upload] Gönderilen form verileri:")
+        for key, value in form_data.items():
+            print(f"   - {key}: {value}")
 
-        if CURL_CFFI_AVAILABLE:
-            multipart = CurlMime()
-            multipart.addpart(name="file", filename=Path(pdf_path).name, data=file_content, mimetype="application/pdf")
-            for key, value in form_data.items():
-                multipart.addpart(name=key, data=str(value))
-            resp = requests.post(upload_url, headers=headers, multipart=multipart, timeout=1200)
-        else:
-            files = {"file": (Path(pdf_path).name, file_content, "application/pdf")}
-            resp = requests.post(upload_url, headers=headers, data=form_data, files=files, timeout=1200)
+        resp = requests.post(
+            upload_url,
+            headers=headers,
+            data=form_data,
+            timeout=1200
+        )
 
         print(f"📡 [Yargıtay Upload] API yanıtı alındı")
         print(f"   📊 Status Code: {resp.status_code}")
@@ -4765,6 +4892,91 @@ def _upload_yargitay_bulk(
         return {"error": str(e)}
 
 
+def _extract_body_inner_html(html_content: str) -> str:
+    match = re.search(r"<body[^>]*>(.*)</body>", html_content, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return html_content.strip()
+
+
+def _build_yargitay_pdf_html(body_html: str) -> str:
+    return f"""<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {{
+      font-family: Verdana, Arial, sans-serif;
+      font-size: 12px;
+      margin: 30px 25px 30px 25px;
+      position: relative;
+    }}
+    .header-title {{
+      font-size: 16px;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 16px;
+    }}
+    .watermark {{
+      position: fixed;
+      top: 40%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-45deg);
+      font-size: 64px;
+      color: rgba(0, 0, 0, 0.08);
+      z-index: 0;
+      pointer-events: none;
+      white-space: nowrap;
+    }}
+    .content {{
+      position: relative;
+      z-index: 1;
+    }}
+  </style>
+</head>
+<body>
+  <div class="watermark">mevzuatgpt.org</div>
+  <div class="header-title">Yargıtay Kararı - mevzuatgpt.org</div>
+  <div class="content">
+    {body_html}
+  </div>
+</body>
+</html>"""
+
+
+def _html_to_text_simple(html_content: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", html_content or "")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _log_yargitay_failure(item: YargitayQueueItem, stage: str, error: str) -> None:
+    payload = {
+        "timestamp": datetime.now().isoformat(),
+        "stage": stage,
+        "id": item.id,
+        "kurum_id": item.kurum_id,
+        "daire": item.daire,
+        "esasNo": item.esasNo,
+        "kararNo": item.kararNo,
+        "kararTarihi": item.kararTarihi,
+        "error": error
+    }
+    try:
+        if os.path.exists(YARGITAY_FAILURES_PATH):
+            with open(YARGITAY_FAILURES_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if not isinstance(data, list):
+                    data = []
+        else:
+            data = []
+        data.append(payload)
+        with open(YARGITAY_FAILURES_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"⚠️ Yargıtay failure log yazılamadı: {str(e)}")
+
+
 async def process_yargitay_item(item: YargitayQueueItem) -> Dict[str, Any]:
     belge_adi = (
         "Yargıtay Başkanlığı - "
@@ -4774,23 +4986,45 @@ async def process_yargitay_item(item: YargitayQueueItem) -> Dict[str, Any]:
         f"Karar Tarihi: {item.kararTarihi}"
     )
 
-    exists_in_mevzuatgpt, exists_in_portal, error_msg = _check_document_name_exists(belge_adi, "t")
-    if exists_in_mevzuatgpt or exists_in_portal:
+    exists_in_mevzuatgpt, exists_in_portal, error_msg = _check_yargitay_exists(item.esasNo, item.kararNo)
+    if error_msg:
+        _log_yargitay_failure(item, "check_exists", error_msg)
+    # Mode belirle: p (sadece Portal), m (sadece MevzuatGPT), t (ikisi de yok)
+    if exists_in_mevzuatgpt and exists_in_portal:
+        print("ℹ️ Belge her iki yerde de mevcut, yükleme atlanıyor.")
         return {
             "success": False,
-            "message": error_msg or "Belge adı daha önce yüklenmiş",
+            "message": error_msg or "Belge her iki yerde de mevcut",
             "data": {
                 "belge_adi": belge_adi,
                 "exists_in_mevzuatgpt": exists_in_mevzuatgpt,
                 "exists_in_portal": exists_in_portal
             }
         }
+    if exists_in_mevzuatgpt and not exists_in_portal:
+        mode = "p"
+    elif exists_in_portal and not exists_in_mevzuatgpt:
+        mode = "m"
+    else:
+        mode = "t"
 
     html_content = fetch_yargitay_document_html(item.id)
     if not html_content:
+        _log_yargitay_failure(item, "fetch_html", "Yargıtay HTML içeriği alınamadı")
         return {"success": False, "message": "Yargıtay HTML içeriği alınamadı"}
 
-    pdf_path = await convert_html_to_pdf(html_content)
+    body_content = _extract_body_inner_html(html_content)
+    if not body_content:
+        _log_yargitay_failure(item, "extract_body", "Yargıtay body içeriği alınamadı")
+        return {"success": False, "message": "Yargıtay body içeriği alınamadı"}
+
+    icerik_text = _html_to_text_simple(body_content)
+    pdf_html = _build_yargitay_pdf_html(body_content)
+    try:
+        pdf_path = await convert_html_to_pdf(pdf_html)
+    except Exception as e:
+        _log_yargitay_failure(item, "html_to_pdf", str(e))
+        return {"success": False, "message": f"PDF oluşturma hatası: {str(e)}"}
     try:
         file_size_bytes = os.path.getsize(pdf_path)
         file_size_mb = round(file_size_bytes / (1024 * 1024), 2)
@@ -4812,26 +5046,42 @@ async def process_yargitay_item(item: YargitayQueueItem) -> Dict[str, Any]:
 
         pdf_url = _upload_to_bunny(pdf_path, bunny_filename, storage_folder_override="yargitay")
         if not pdf_url:
+            _log_yargitay_failure(item, "bunny_upload", "Bunny.net yükleme başarısız")
             print("⚠️ Bunny.net yükleme başarısız, upload işlemi devam edecek")
+
+        url_slug = _create_url_slug(belge_adi)
+        etiketler = f"E:{item.esasNo}-K:{item.kararNo}"
 
         cfg = _load_config()
         if not cfg:
+            _log_yargitay_failure(item, "config", "Config dosyası bulunamadı")
             return {"success": False, "message": "Config dosyası bulunamadı"}
         token = _login_with_config(cfg)
         if not token:
+            _log_yargitay_failure(item, "login", "MevzuatGPT login başarısız")
             return {"success": False, "message": "MevzuatGPT login başarısız"}
 
         upload_resp = _upload_yargitay_bulk(
             cfg=cfg,
             token=token,
-            pdf_path=pdf_path,
+            pdf_url=pdf_url or "",
             belge_adi=belge_adi,
             daire=item.daire,
             esas_no=item.esasNo,
             karar_no=item.kararNo,
             karar_tarihi=item.kararTarihi,
-            stats=stats
+            stats=stats,
+            url_slug=url_slug,
+            etiketler=etiketler,
+            icerik=body_content,
+            icerik_text=icerik_text,
+            kurum_id=item.kurum_id,
+            mode=mode,
+            sayfa_sayisi=page_count,
+            dosya_boyutu_mb=file_size_mb
         )
+        if isinstance(upload_resp, dict) and upload_resp.get("status_code") not in (None, 200):
+            _log_yargitay_failure(item, "bulk_upload", json.dumps(upload_resp, ensure_ascii=False))
 
         return {
             "success": True,
@@ -4840,6 +5090,11 @@ async def process_yargitay_item(item: YargitayQueueItem) -> Dict[str, Any]:
                 "belge_adi": belge_adi,
                 "bunny_pdf_url": pdf_url,
                 "stats": stats,
+                "url_slug": url_slug,
+                "etiketler": etiketler,
+                "icerik": body_content,
+                "icerik_text": icerik_text,
+                "mode": mode,
                 "upload_response": upload_resp
             }
         }

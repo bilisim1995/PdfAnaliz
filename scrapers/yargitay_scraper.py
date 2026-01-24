@@ -45,23 +45,46 @@ def fetch_yargitay_list(page_number: int) -> List[Dict[str, Any]]:
         }
     }
 
-    if CURL_CFFI_AVAILABLE:
-        response = requests.post(
-            YARGITAY_LIST_URL,
-            headers=_build_headers(),
-            data=json.dumps(payload),
-            timeout=120,
-            proxies=proxies,
-            impersonate="chrome110"
-        )
-    else:
-        response = requests.post(
-            YARGITAY_LIST_URL,
-            headers=_build_headers(),
-            json=payload,
-            timeout=120,
-            proxies=proxies
-        )
+    try:
+        if CURL_CFFI_AVAILABLE:
+            response = requests.post(
+                YARGITAY_LIST_URL,
+                headers=_build_headers(),
+                data=json.dumps(payload),
+                timeout=120,
+                proxies=proxies,
+                impersonate="chrome110"
+            )
+        else:
+            response = requests.post(
+                YARGITAY_LIST_URL,
+                headers=_build_headers(),
+                json=payload,
+                timeout=120,
+                proxies=proxies
+            )
+    except requests.exceptions.RequestException as e:
+        if proxies:
+            print(f"⚠️ Proxy hatası ({str(e)}), direkt bağlantı deneniyor...")
+            if CURL_CFFI_AVAILABLE:
+                response = requests.post(
+                    YARGITAY_LIST_URL,
+                    headers=_build_headers(),
+                    data=json.dumps(payload),
+                    timeout=120,
+                    proxies=None,
+                    impersonate="chrome110"
+                )
+            else:
+                response = requests.post(
+                    YARGITAY_LIST_URL,
+                    headers=_build_headers(),
+                    json=payload,
+                    timeout=120,
+                    proxies=None
+                )
+        else:
+            raise
 
     response.raise_for_status()
     data = response.json()
@@ -83,21 +106,42 @@ def fetch_yargitay_document_html(doc_id: str) -> str:
     headers = _build_headers()
     headers["Accept"] = "text/html,application/xml;q=0.9,*/*;q=0.8"
 
-    if CURL_CFFI_AVAILABLE:
-        response = requests.get(
-            url,
-            headers=headers,
-            timeout=120,
-            proxies=proxies,
-            impersonate="chrome110"
-        )
-    else:
-        response = requests.get(
-            url,
-            headers=headers,
-            timeout=120,
-            proxies=proxies
-        )
+    try:
+        if CURL_CFFI_AVAILABLE:
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=120,
+                proxies=proxies,
+                impersonate="chrome110"
+            )
+        else:
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=120,
+                proxies=proxies
+            )
+    except requests.exceptions.RequestException as e:
+        if proxies:
+            print(f"⚠️ Proxy hatası ({str(e)}), direkt bağlantı deneniyor...")
+            if CURL_CFFI_AVAILABLE:
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    timeout=120,
+                    proxies=None,
+                    impersonate="chrome110"
+                )
+            else:
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    timeout=120,
+                    proxies=None
+                )
+        else:
+            raise
 
     response.raise_for_status()
     return _extract_html_from_xml(response.text) or response.text

@@ -1,5 +1,5 @@
 {
-  "api_base_url": "https://app.mevzuatgpt.org",
+  "api_base_url": "https://app.mevzuatgpt.com",
   "admin_email": "admin@mevzuatgpt.com",
   "admin_password": "TestAdmin123!",
   "deepseek_api_key": "sk-8c15dc40c6b44cde9880f7a47b4be333"

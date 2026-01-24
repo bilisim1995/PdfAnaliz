@@ -246,7 +246,7 @@ async def html_content_to_pdf(html_content: str, base_url: Optional[str] = None)
 
         try:
             print("⏳ HTML içerik yükleniyor...")
-            await page.set_content(html_content, wait_until="networkidle", base_url=base_url)
+            await page.set_content(html_content, wait_until="networkidle")
             await page.wait_for_timeout(1000)
             await page.wait_for_load_state("domcontentloaded")
             await page.wait_for_load_state("networkidle")
