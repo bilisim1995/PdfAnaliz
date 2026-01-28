@@ -417,6 +417,13 @@ class QueueClearResponse(BaseModel):
     queue_size: int
 
 
+class YargitayChainStatusResponse(BaseModel):
+    success: bool
+    active: bool
+    next_page: Optional[int] = None
+    kurum_id: Optional[str] = None
+
+
 PROCESS_QUEUE_LOCK = threading.Lock()
 PROCESS_QUEUE_SLEEP_SECONDS = 3 * 60
 PROCESS_QUEUE_WORKER_THREAD = None
@@ -430,6 +437,9 @@ REDIS_QUEUE_TOTAL_KEY = f"{REDIS_QUEUE_KEY}:total"
 REDIS_QUEUE_COMPLETED_KEY = f"{REDIS_QUEUE_KEY}:completed"
 REDIS_QUEUE_IN_FLIGHT_KEY = f"{REDIS_QUEUE_KEY}:in_flight"
 REDIS_QUEUE_STOP_KEY = f"{REDIS_QUEUE_KEY}:stop_requested"
+REDIS_YARGITAY_CHAIN_ACTIVE_KEY = f"{REDIS_QUEUE_KEY}:yargitay_chain_active"
+REDIS_YARGITAY_CHAIN_PAGE_KEY = f"{REDIS_QUEUE_KEY}:yargitay_chain_page"
+REDIS_YARGITAY_CHAIN_KURUM_ID_KEY = f"{REDIS_QUEUE_KEY}:yargitay_chain_kurum_id"
 
 
 def _get_redis_client() -> redis.Redis:
@@ -457,6 +467,9 @@ def _redis_reset_queue_state(r: redis.Redis) -> None:
     r.set(REDIS_QUEUE_COMPLETED_KEY, 0)
     r.set(REDIS_QUEUE_IN_FLIGHT_KEY, 0)
     r.set(REDIS_QUEUE_STOP_KEY, "0")
+    r.set(REDIS_YARGITAY_CHAIN_ACTIVE_KEY, "0")
+    r.delete(REDIS_YARGITAY_CHAIN_PAGE_KEY)
+    r.delete(REDIS_YARGITAY_CHAIN_KURUM_ID_KEY)
 
 
 def _enqueue_queue_payload(payload: Dict[str, Any]) -> None:
@@ -530,6 +543,33 @@ def _process_queue_worker() -> None:
             _redis_reset_queue_state(r)
             break
         if not stop_requested and r.llen(REDIS_QUEUE_KEY) == 0 and _redis_get_int(r, REDIS_QUEUE_IN_FLIGHT_KEY) == 0:
+            chain_active = r.get(REDIS_YARGITAY_CHAIN_ACTIVE_KEY) == "1"
+            if chain_active:
+                next_page = _redis_get_int(r, REDIS_YARGITAY_CHAIN_PAGE_KEY)
+                kurum_id = r.get(REDIS_YARGITAY_CHAIN_KURUM_ID_KEY) or ""
+                if next_page > 0 and kurum_id:
+                    items = fetch_yargitay_list(next_page)
+                    enqueued_count = 0
+                    for item in items:
+                        payload = {
+                            "type": "yargitay",
+                            "id": str(item.get("id", "")).strip(),
+                            "kurum_id": kurum_id,
+                            "daire": str(item.get("daire", "")).strip(),
+                            "esasNo": str(item.get("esasNo", "")).strip(),
+                            "kararNo": str(item.get("kararNo", "")).strip(),
+                            "kararTarihi": str(item.get("kararTarihi", "")).strip()
+                        }
+                        if not payload["id"]:
+                            continue
+                        _enqueue_queue_payload(payload)
+                        enqueued_count += 1
+                    if enqueued_count > 0:
+                        r.set(REDIS_YARGITAY_CHAIN_PAGE_KEY, str(next_page + 1))
+                        continue
+                r.set(REDIS_YARGITAY_CHAIN_ACTIVE_KEY, "0")
+                r.delete(REDIS_YARGITAY_CHAIN_PAGE_KEY)
+                r.delete(REDIS_YARGITAY_CHAIN_KURUM_ID_KEY)
             _redis_reset_queue_state(r)
             break
     with PROCESS_QUEUE_LOCK:
@@ -598,6 +638,14 @@ async def enqueue_yargitay_items(req: YargitayUploadRequest):
 
     _ensure_queue_worker_running()
     r = _get_redis_client()
+    if enqueued_count > 0:
+        r.set(REDIS_YARGITAY_CHAIN_ACTIVE_KEY, "1")
+        r.set(REDIS_YARGITAY_CHAIN_PAGE_KEY, str(req.page + 1))
+        r.set(REDIS_YARGITAY_CHAIN_KURUM_ID_KEY, req.kurum_id)
+    else:
+        r.set(REDIS_YARGITAY_CHAIN_ACTIVE_KEY, "0")
+        r.delete(REDIS_YARGITAY_CHAIN_PAGE_KEY)
+        r.delete(REDIS_YARGITAY_CHAIN_KURUM_ID_KEY)
     queue_size = r.llen(REDIS_QUEUE_KEY)
     return QueueEnqueueResponse(
         success=True,
@@ -644,6 +692,20 @@ async def get_queue_status():
         completed_count=completed_count,
         remaining_count=remaining_count,
         instance_id=instance_id
+    )
+
+
+@app.get("/api/yargitay-upload/chain/status", response_model=YargitayChainStatusResponse, tags=["Yargıtay"], summary="Yargıtay sayfa zinciri durumunu getir")
+async def get_yargitay_chain_status():
+    r = _get_redis_client()
+    active = r.get(REDIS_YARGITAY_CHAIN_ACTIVE_KEY) == "1"
+    next_page = _redis_get_int(r, REDIS_YARGITAY_CHAIN_PAGE_KEY) if active else None
+    kurum_id = r.get(REDIS_YARGITAY_CHAIN_KURUM_ID_KEY) if active else None
+    return YargitayChainStatusResponse(
+        success=True,
+        active=active,
+        next_page=next_page,
+        kurum_id=kurum_id
     )
 
 
