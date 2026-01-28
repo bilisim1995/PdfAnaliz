@@ -636,7 +636,6 @@ async def enqueue_yargitay_items(req: YargitayUploadRequest):
         _enqueue_queue_payload(payload)
         enqueued_count += 1
 
-    _ensure_queue_worker_running()
     r = _get_redis_client()
     if enqueued_count > 0:
         r.set(REDIS_YARGITAY_CHAIN_ACTIVE_KEY, "1")
@@ -646,6 +645,7 @@ async def enqueue_yargitay_items(req: YargitayUploadRequest):
         r.set(REDIS_YARGITAY_CHAIN_ACTIVE_KEY, "0")
         r.delete(REDIS_YARGITAY_CHAIN_PAGE_KEY)
         r.delete(REDIS_YARGITAY_CHAIN_KURUM_ID_KEY)
+    _ensure_queue_worker_running()
     queue_size = r.llen(REDIS_QUEUE_KEY)
     return QueueEnqueueResponse(
         success=True,
